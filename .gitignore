@@ -1,5 +1,4 @@
 # Local SD image and all game/proprietary assets
-/_SD/
 /Assets/
 /assets/
 /dist/
@@ -76,3 +75,9 @@
 # Local splash artwork and generated previews; coordinates alone are source
 /tools/splash/*
 !/tools/splash/layout.json
+
+# User-approved runtime binaries; the game DAT remains excluded
+!/_SD/GAMES/VDAC4/HMM2 VDAC4/HMM2.ELF
+!/_SD/GAMES/VDAC4/HMM2 VDAC4/_HMM2.SPG
+!/_SD/GAMES/VDAC4/HMM2 VDAC4/HSD.ELF
+!/_SD/WC/ESP/OGG.ELF

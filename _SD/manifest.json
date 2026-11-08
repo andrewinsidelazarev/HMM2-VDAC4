@@ -1,0 +1,95 @@
+{
+  "build": 130,
+  "contains_game_dat": false,
+  "requires_game_dat": true,
+  "required_dat_path": "GAMES/VDAC4/HMM2 VDAC4/HMM2.DAT",
+  "required_dat_bytes": 547492852,
+  "required_dat_sha256": "d0c1390d5bbbc1c6e227a8775f3ff595c7588a0412e845c48ee6c7d40be7a236",
+  "runtime_files": [
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/_HMM2.SPG",
+      "bytes": 201216,
+      "sha256": "1a3b4bd83d928248b85d861050abefe2756f6640750a59d1f4b407133b05c03f"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/FHEROES2.CFG",
+      "bytes": 227,
+      "sha256": "a3b66b7f72178d058eb1502f2a1d5ee864b5cfd994fdcae7b708aa0a5fd9bfeb"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/HMM2.ELF",
+      "bytes": 1650408,
+      "sha256": "38a8014cc3b727b36745820c290d0fec67973aa4e64723276ad092d55261e51b"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/HSD.ELF",
+      "bytes": 3744,
+      "sha256": "7235acd6a4040de8ae3417f3d0480875c8d6785cfb2a6fc925786dce2b18b201"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/LICENSE",
+      "bytes": 18431,
+      "sha256": "189b1af95d661151e054cea10c91b3d754e4de4d3fecfb074c1fb29476f7167b"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/licenses/FAT32-MIT.txt",
+      "bytes": 1092,
+      "sha256": "0d01ca76d28e9d429ac6e416a18c1747171919ce0b15d6167efd4d717580251d"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/licenses/GCC-GPL-3.0.txt",
+      "bytes": 35147,
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/licenses/GCC-Runtime-Exception.txt",
+      "bytes": 3324,
+      "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/licenses/PROJECT_INITIAL_MIT.txt",
+      "bytes": 1092,
+      "sha256": "0d01ca76d28e9d429ac6e416a18c1747171919ce0b15d6167efd4d717580251d"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/licenses/PUFF.txt",
+      "bytes": 1415,
+      "sha256": "969b7be2a930db0cdcb19b0e5b29ae6741f5a8f663b6dba6d647e12ec60cfa8e"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/licenses/R-Type-MIT.txt",
+      "bytes": 1071,
+      "sha256": "936e7254db19e3d6ebb4b09963dbe018bf83839adfe6ce309efc12661eafd093"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/licenses/STB-VORBIS.txt",
+      "bytes": 2627,
+      "sha256": "3632b9067290c92a64006dc2f1dc1127e8d43c4de32da98933bd623ce4fe91b6"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/licenses/VDAC4-MIT.txt",
+      "bytes": 1092,
+      "sha256": "0d01ca76d28e9d429ac6e416a18c1747171919ce0b15d6167efd4d717580251d"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/licenses/ZLIB.txt",
+      "bytes": 1002,
+      "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
+    },
+    {
+      "path": "GAMES/VDAC4/HMM2 VDAC4/THIRD_PARTY.md",
+      "bytes": 3146,
+      "sha256": "90d6cd5a27ce22e9eb9a25acbf38ca3112c5358c3e22c14420251491b6360b1a"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1472,
+      "sha256": "42f44e931b370b90180444cf36c57da8d875a5df0d803dffcd797c845851be8b"
+    },
+    {
+      "path": "WC/ESP/OGG.ELF",
+      "bytes": 35420,
+      "sha256": "80a32e2e9eb8e2319cdaed74b82f607e2d61ee2071cfc863ee1e5a184bfea142"
+    }
+  ]
+}
