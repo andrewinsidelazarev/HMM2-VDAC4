@@ -1,0 +1,43 @@
+{
+  "scene": "scene_04_knight.png",
+  "canvas": [
+    1024,
+    768
+  ],
+  "bar": [
+    128,
+    688,
+    896,
+    718
+  ],
+  "inset": [
+    3,
+    3
+  ],
+  "mask_alpha": 192,
+  "logo": [
+    42,
+    0,
+    940,
+    216
+  ],
+  "panel_border": [
+    12,
+    8
+  ],
+  "palette": "fullcolor",
+  "zx_evolution": [
+    351,
+    200,
+    322,
+    32
+  ],
+  "subtitle": [
+    249,
+    600,
+    526,
+    84
+  ],
+  "scene_offset_y": 80,
+  "logo_filter": "pixel_lanczos"
+}
