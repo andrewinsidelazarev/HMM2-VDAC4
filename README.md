@@ -8,7 +8,7 @@
 
 Логика игры работает на ESP32-S3. Загрузчик Z80 обслуживает запуск, SD-карту
 и ввод на ZX Evolution / TS-Config. Графику выводит эмулятор FT812 в Tang Slot 1:
-спрайты, отсечение, прозрачность окон и тени задаются аппаратными командами.
+спрайты, отсечение, прозрачность окон и тени задаются [аппаратными командами](docs/FT812_API.md).
 
 ## Исходники порта
 
@@ -92,7 +92,7 @@ WC/ESP/OGG.ELF
 | [Espressif ELF loader 1.3.3](https://github.com/espressif/esp-iot-solution/tree/5d75f3f0dc499d9ed4b69284a3741187c2b75a70/components/elf_loader) | Загрузка ELF в прошивке VDAC4 |
 | [sjasmplus](https://github.com/z00m128/sjasmplus) | Ассемблер загрузчика Z80 |
 | [Espressif QEMU](https://github.com/espressif/qemu) | Стенд исполнения ESP32-S3 |
-| [Unreal Speccy](https://sourceforge.net/projects/unrealspeccy/) | Основа эмулятора для совместных проверок Z80 |
+| [ZX-Evo Unreal](https://github.com/tslabs/zx-evo-unreal) | Эмулятор для совместных проверок Z80 |
 | [FFmpeg](https://github.com/FFmpeg/FFmpeg) | Локальная подготовка роликов и звуковых дорожек |
 | [Pillow](https://github.com/python-pillow/Pillow) | Локальная обработка изображений |
 | [NumPy](https://github.com/numpy/numpy) | Подготовка и проверка графических данных |
