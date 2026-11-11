@@ -9,7 +9,7 @@
     {
       "path": "GAMES/VDAC4/HMM2 VDAC4/_HMM2.SPG",
       "bytes": 201216,
-      "sha256": "1a3b4bd83d928248b85d861050abefe2756f6640750a59d1f4b407133b05c03f"
+      "sha256": "96825e6fc10c22fbeefc7b08d02226837f71524f3d61999d53797a963194c2b7"
     },
     {
       "path": "GAMES/VDAC4/HMM2 VDAC4/FHEROES2.CFG",
@@ -83,13 +83,14 @@
     },
     {
       "path": "README.md",
-      "bytes": 1472,
-      "sha256": "42f44e931b370b90180444cf36c57da8d875a5df0d803dffcd797c845851be8b"
+      "bytes": 1607,
+      "sha256": "6b43fd1bed554fc90df03ef335835dbd399af33a65d2d44146643d08888172cf"
     },
     {
       "path": "WC/ESP/OGG.ELF",
       "bytes": 35420,
       "sha256": "80a32e2e9eb8e2319cdaed74b82f607e2d61ee2071cfc863ee1e5a184bfea142"
     }
-  ]
+  ],
+  "launcher_revision": "wc-f7-reserved"
 }

@@ -1,5 +1,5 @@
 ; Codex: независимая предвыборка музыки Z80 во все свободные банки из 4 МиБ ОЗУ Ево.
-; E7 [DAT offset,u32 size]. Банки 128..255 и остаток свободных банков — данные DAT; PCM обслуживает ESP.
+; E7 [DAT offset,u32 size]. Кольцо (кроме #F7) и остаток свободных банков — данные DAT; PCM обслуживает ESP.
 MUSIC_MAX_PAGES equ 122
 MUSIC_SLOTS equ 64
 ; Codex: свободные окна рабочей страницы FAT32; его секторные буферы и CRC-таблицы сохранены.
@@ -56,7 +56,7 @@ FastMusicOpen:
         ld b,a
         ld a,c
         sub b
-        add a,128
+        add a,FAST_RING_PAGES
         ld (FastDataSlots),a
         ld a,#FF
         ld (FastSelBase),a
@@ -200,7 +200,7 @@ FastMusicNotice:
         ld (MusicDemand+2),hl
         ret
 
-; Клод: выбрать слот, страницу и таблицу меток. Данным — 128 банков кольца и все свободные банки,
+; Клод: выбрать слот, страницу и таблицу меток. Данным — FAST_RING_PAGES банков кольца и все свободные банки,
 ; кроме MusicSlots под музыку: блок файла по модулю числа слотов. На один блок считается один раз.
 FastMusicSelect:
         ld hl,FastBase
@@ -245,15 +245,19 @@ FastMusicSelect:
         ld de,(FastBase+2)
         ld a,(FastDataSlots)
         call .modulo
-        cp 128
+        cp FAST_RING_PAGES
         jr nc,.extra
         ld (FastRing),a
         add a,FAST_RING_PAGE
+        cp WC_PATH_PAGE
+        jr c,.ring_page
+        inc a                    ; не выдавать страницу путей Wild Commander
+.ring_page:
         ld (FastDataPage),a
         ld de,FastTags
         ret
 .extra:
-        sub 128
+        sub FAST_RING_PAGES
         ld hl,MusicSlots
         add a,(hl)
 .mapped:
@@ -363,7 +367,7 @@ FastMusicIdle:
 MusicActive: db 0
 MusicPages: db 0
 MusicSlots: db 0
-FastDataSlots: db 128
+FastDataSlots: db FAST_RING_PAGES
 FastSelBase: dd #FFFFFFFF
 FastSelTable: dw 0
 MusicStart: dd 0
