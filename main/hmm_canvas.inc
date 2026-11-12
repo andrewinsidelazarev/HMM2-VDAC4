@@ -641,7 +641,7 @@ HMM_SIZE_RENDER void join_map_layers(Sequence<Draw> &draws){
     // Queries read only rectangles, not shared Draw records from PSRAM.
     // Block bounds may include removed layers: this only causes extra checks.
     // A growing merged rectangle always expands its block before the next query.
-    constexpr unsigned block_shift=4,block_size=1u<<block_shift;
+    constexpr unsigned block_shift=2,block_size=1u<<block_shift;
     std::unique_ptr<Rect[]> rects(new(std::nothrow) Rect[count]);
     std::unique_ptr<Rect[]> blocks(new(std::nothrow) Rect[(count+block_size-1)>>block_shift]);
 #ifdef HMM2_HOST

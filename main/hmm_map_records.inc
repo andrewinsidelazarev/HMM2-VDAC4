@@ -12,10 +12,18 @@ struct HmmMapRecordFogScope {
 };
 class HmmTileImages {
 public:
-    struct Piece {fheroes2::Point offset;int order;fheroes2::ObjectRenderingInfo info;bool hero,skip;};
+    struct Piece {fheroes2::Point offset;int order;uint32_t info;};
+    struct View {const fheroes2::Point &offset;int order;const fheroes2::ObjectRenderingInfo &info;bool hero,skip;};
 private:
-    struct Release {~Release(){Sequence<Piece>::release_unused();}} release;
+    static constexpr uint32_t HERO=0x80000000u,SKIP=0x40000000u,ALPHA=0x20000000u,INDEX=0x1fffffffu;
+    struct Release {~Release(){Sequence<Piece>::release_unused();Sequence<fheroes2::ObjectRenderingInfo>::release_unused();}} release;
     mutable Sequence<Piece> pieces;
+    Sequence<fheroes2::ObjectRenderingInfo> images;
+    static const fheroes2::ObjectRenderingInfo &skipped_info(bool alpha){
+        static const fheroes2::ObjectRenderingInfo opaque{};
+        static const fheroes2::ObjectRenderingInfo transparent=[](){fheroes2::ObjectRenderingInfo v;v.alphaValue=0;return v;}();
+        return alpha?opaque:transparent;
+    }
     void append(const fheroes2::Point &offset,const fheroes2::ObjectRenderingInfo &info,bool front){
         // A square wholly inside an unchanged cell cannot reach a dirty cell.
         // Keep unusual cross-cell pieces on the conservative original path.
@@ -24,8 +32,29 @@ private:
            (!hmm_gpu_ring_need(offset.x,offset.y)||
             (hmm_records_fog&&offset.x>=0&&offset.y>=0&&offset.x<world.w()&&offset.y<world.h()&&
              world.getTile(offset.x,offset.y).getFogDirection()==DIRECTION_ALL));
-        const int order=int(pieces.size())+1;pieces.push_back(Piece{offset,front?-order:order,info,hmm_hero_records,skip});
+        // Invisible entries still reserve their exact place/order in the map
+        // stream, but only their alpha predicate is needed by ring_skip().
+        const uint32_t index=uint32_t(images.size());if(!skip)images.push_back(info);
+        const uint32_t flags=(hmm_hero_records?HERO:0u)|(skip?SKIP:0u)|(info.alphaValue?ALPHA:0u);
+        const int order=int(pieces.size())+1;pieces.push_back(Piece{offset,front?-order:order,index|flags});
     }
+    static bool less_piece(const Piece &a,const Piece &b){
+        if(a.offset<b.offset)return true;if(b.offset<a.offset)return false;return a.order<b.order;
+    }
+#ifndef HMM2_HOST
+    __attribute__((optimize("Oz"),noinline))
+#endif
+    void sort_indices(std::vector<uint16_t> &indices)const{
+        for(size_t i=0;i<pieces.size();++i)indices[i]=uint16_t(i);
+        // Rare wide/oversize queues retain the same total key. Heap sort
+        // shares the small sift implementation instead of another introsort.
+        auto less=[&](uint16_t a,uint16_t b){return less_piece(pieces[a],pieces[b]);};
+        std::make_heap(indices.begin(),indices.end(),less);std::sort_heap(indices.begin(),indices.end(),less);
+    }
+#ifndef HMM2_HOST
+    __attribute__((optimize("Oz"),noinline))
+#endif
+    void sort_pieces()const{std::make_heap(pieces.begin(),pieces.end(),less_piece);std::sort_heap(pieces.begin(),pieces.end(),less_piece);}
 public:
     struct Slot {
         HmmTileImages &owner;fheroes2::Point offset;
@@ -34,10 +63,11 @@ public:
     };
     Slot operator[](const fheroes2::Point &offset){return {*this,offset};}
     struct Ordered {
-        const Sequence<Piece> &pieces;std::vector<uint16_t> indices;
+        const Sequence<Piece> &pieces;const Sequence<fheroes2::ObjectRenderingInfo> &images;std::vector<uint16_t> indices;
         struct Iterator {
             const Ordered &view;size_t at;
-            const Piece &operator*()const{return view.pieces[view.indices.empty()?at:view.indices[at]];}
+            View operator*()const{const auto &p=view.pieces[view.indices.empty()?at:view.indices[at]];
+                return {p.offset,p.order,(p.info&SKIP)?skipped_info((p.info&ALPHA)!=0):view.images[p.info&INDEX],(p.info&HERO)!=0,(p.info&SKIP)!=0};}
             Iterator &operator++(){++at;return *this;}
             bool operator!=(const Iterator &other)const{return at!=other.at;}
         };
@@ -48,9 +78,7 @@ public:
     __attribute__((optimize("O2"),noinline))
 #endif
     Ordered ordered()const{
-        auto less=[](const Piece &a,const Piece &b){
-            if(a.offset<b.offset)return true;if(b.offset<a.offset)return false;return a.order<b.order;};
-        Ordered result{pieces,{}};
+        Ordered result{pieces,images,{}};
         // Codex: при прокрутке сортируются двухбайтовые индексы, а не крупные
         // ObjectRenderingInfo в PSRAM. Тот же строгий ключ сохраняет весь порядок.
         // При необычном размере либо нехватке памяти остаётся сортировка записей;
@@ -82,15 +110,14 @@ public:
                     bucket=true;
                 }
             }
-            if(!bucket){for(size_t i=0;i<pieces.size();++i)result.indices[i]=uint16_t(i);
-                std::sort(result.indices.begin(),result.indices.end(),[&](uint16_t a,uint16_t b){return less(pieces[a],pieces[b]);});}
+            if(!bucket)sort_indices(result.indices);
 #ifdef HMM2_HOST
             static const bool verify=std::getenv("HMM2_QUEUE_SORT_VERIFY")!=nullptr;
             if(verify){std::vector<uint16_t> reference(pieces.size());for(unsigned i=0;i<pieces.size();++i)reference[i]=uint16_t(i);
-                std::sort(reference.begin(),reference.end(),[&](uint16_t a,uint16_t b){return less(pieces[a],pieces[b]);});
+                std::sort(reference.begin(),reference.end(),[&](uint16_t a,uint16_t b){return less_piece(pieces[a],pieces[b]);});
                 if(reference!=result.indices)throw std::runtime_error("map queue order differs from original sort");}
 #endif
-        }else std::sort(pieces.begin(),pieces.end(),less);
+        }else sort_pieces();
         return result;
     }
 };

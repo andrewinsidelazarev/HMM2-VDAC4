@@ -26,6 +26,7 @@ extern char __ashldi3,__ashrdi3,__lshrdi3;
 extern char __extendsfdf2,__fixdfsi,__floatdidf,__floatsidf,__divsf3,__divdf3,__floatunsidf,__ledf2,__truncdfsf2;
 static const zm_app_t *app;
 static long package,trace,sd_journal=-1,read_journal=-1;
+static unsigned bench_timing;
 static unsigned frames,reads,read_bytes,reply_bytes;static uint8_t response[1024];
 /* Codex: DMA-ответ не занимает стек задачи игры. */
 static uint8_t sd_answer[8192];
@@ -302,6 +303,7 @@ static int ft_write(uint32_t addr,const uint32_t *words,uint32_t count){
     if(addr==0x3020fc)command_position=*words;
     uint32_t header[]={addr,count};host_write(trace,header,sizeof(header));host_write(trace,words,count*4);
     if(addr==0x302054 && count==1 && *words==2){
+        if(!bench_timing){
 #if CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
         /* Codex: счётчик только задачи игры исключает ожидание SD и idle.
          * В режиме -icount shift=0 микросекунда модели равна 1000 инструкциям;
@@ -312,15 +314,18 @@ static int ft_write(uint32_t addr,const uint32_t *words,uint32_t count){
         if(cursor_handle){vTaskGetInfo(cursor_handle,&task_status,pdFALSE,eRunning);logline("QEMU CPU cursor frame=%u runtime_us=%lu",frames+1,(unsigned long)task_status.ulRunTimeCounter);}
         if(audio_handle){vTaskGetInfo(audio_handle,&task_status,pdFALSE,eRunning);logline("QEMU CPU audio frame=%u runtime_us=%lu",frames+1,(unsigned long)task_status.ulRunTimeCounter);}
 #endif
+        }
         if(!frames)first_frame_ready=millis();
         // Клод: T — виртуальное время кадра в мс (-icount): по нему меряются паузы между кадрами (окно пазла и т. п.).
-        frames++;logline("QEMU: кадр=%u T=%lu SD=%u/%u PSRAM свободно=%u минимум=%u STACK=%u/%u",frames,(unsigned long)(esp_timer_get_time()/1000),reads,read_bytes,(unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),(unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM),(unsigned)uxTaskGetStackHighWaterMark(game_handle),game_stack);
+        frames++;
+        if(!bench_timing){logline("QEMU: кадр=%u T=%lu SD=%u/%u PSRAM свободно=%u минимум=%u STACK=%u/%u",frames,(unsigned long)(esp_timer_get_time()/1000),reads,read_bytes,(unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),(unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM),(unsigned)uxTaskGetStackHighWaterMark(game_handle),game_stack);
         /* Codex: сумма свободного места не показывает раздробление; тот же замер до и после правки ELF. */
         if(frames%100==0){multi_heap_info_t info;heap_caps_get_info(&info,MALLOC_CAP_SPIRAM);
             logline("QEMU MEM frame=%u free=%u largest=%u free_blocks=%u used_blocks=%u",frames,(unsigned)info.total_free_bytes,(unsigned)info.largest_free_block,(unsigned)info.free_blocks,(unsigned)info.allocated_blocks);}
         if(audio_handle)logline("QEMU: AUDIO_FREE=%u/5632",(unsigned)uxTaskGetStackHighWaterMark(audio_handle));
         if(worker_handle)logline("QEMU: WORKER_FREE=%u/%u",(unsigned)uxTaskGetStackHighWaterMark(worker_handle),worker_stack);
         if(cursor_handle)logline("QEMU: CURSOR_FREE=%u/%u",(unsigned)uxTaskGetStackHighWaterMark(cursor_handle),cursor_stack);
+        }
         if(frames>=frame_limit && millis()-scenario_started>=finish_after){host_close(trace);logline("QEMU: FILEX read=%u write=%u",file_read_bytes,file_write_bytes);capture_done=1;logline("QEMU: захват кадров завершён, %u кадров записаны",frames);for(;;)delay(1000);}
     }
     xSemaphoreGive(trace_lock);return ZM_OK;
@@ -366,6 +371,8 @@ void app_main(void){
     if(control>=0){host_read(control,&click_hold,4);host_close(control);if(!click_hold||click_hold>20)click_hold=1;}
     control=host_open(HMM2_TEST_BASE "/qemu_stage1/ui_mouse.bin",1);
     if(control>=0){host_read(control,mouse_test,sizeof(mouse_test));host_close(control);}
+    control=host_open(HMM2_TEST_BASE "/qemu_stage1/bench_timing.bin",1);
+    if(control>=0){host_read(control,&bench_timing,4);host_close(control);}
     control=host_open(HMM2_TEST_BASE "/qemu_stage1/ui_pointer_direct.bin",1);
     if(control>=0){host_read(control,&pointer_direct,4);host_close(control);}
     // Codex: отдельный исходный DAT для честного воспроизведения старого установленного ELF.

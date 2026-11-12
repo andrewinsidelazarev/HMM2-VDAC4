@@ -1,6 +1,6 @@
 """Codex: исполняем E6 на Z80: DAT -> кольцо Evo -> DMA SPI FT812, с проверкой каждого байта."""
 from pathlib import Path
-import json,struct,shutil
+import json,struct,shutil,os
 import test_fix4_sd as sd
 base=sd.base
 
@@ -13,6 +13,7 @@ class App(base.Esp):
                     (1,0x10000,512,1),(0,0x10000,513,1),(0,0x2fffff,512,1),
                     (0,0xffffff00,512,1),(0,0x10000,0,1)]
     def __call__(self,c,p):
+        if c==0x72:return base.frame(0xf2,b'\1')
         if c==0x6c:self.started=True;return base.frame(0xec,b'\0')
         if c==0x70:return base.frame(0xf0,b'\1')+self.next_request()
         if c==0x71:
@@ -41,8 +42,16 @@ def main():
     data=bytes((i*37+(i>>9)*13)&255 for i in range(96*1024))
     results=[]
     for fragmented in (False,True):
-        app=App(data);m=sd.Machine(sd.fixture(data,fragmented),app);m.run()
+        app=App(data);disk=sd.fixture(data,fragmented)
+        # The current loader resolves WC/ESP/OGG.ELF before configuring HMM2.
+        root=disk.read(disk.data_start)[:64]+base.entry('WC',20,directory=True)
+        for cluster in (20,21,22):disk.set_fat(cluster,0x0fffffff)
+        disk.write(disk.data_start,root.ljust(512,b'\0'))
+        disk.write(disk.data_start+(20-2)*8,base.entry('ESP',21,directory=True).ljust(512,b'\0'))
+        disk.write(disk.data_start+(21-2)*8,base.entry('OGG.ELF',22,512).ljust(512,b'\0'))
+        disk.write(disk.data_start+(22-2)*8,bytes(512))
+        m=sd.Machine(disk,app);m.run()
         assert len(app.rows)==9 and not m.writes and not m.path_writes
         results.append(dict(fragmented=fragmented,rows=app.rows));print(results[-1],flush=True)
-    (sd.j.ROOT/'Docs/evidence/stage1_fix5_graphics_dma.json').write_text(json.dumps(results,indent=2),encoding='utf-8')
+    Path(os.environ.get('HMM2_GRAPHICS_RESULTS',str(sd.j.BASE/'graphics_dma.json'))).write_text(json.dumps(results,indent=2),encoding='utf-8')
 if __name__=='__main__':main()

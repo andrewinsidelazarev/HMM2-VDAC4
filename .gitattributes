@@ -6,3 +6,6 @@
 *.inc text eol=lf
 *.asm text eol=lf
 *.md text eol=lf
+
+# Preserve the SD kit bytes and checksums on every platform
+/_SD/** -text

@@ -7,6 +7,7 @@ uint32_t ring_pixels_buffer[(1+RING_SHADE_PLANES)*256];
 // Два банка защищают показанный кадр; в них нет монстров и фаз анимации.
 constexpr unsigned RING_BG_COLS=21,RING_BG_ROWS=16,RING_BG_BYTES=RING_BG_ROWS*1024;
 uint64_t ring_background_ids[2][RING_BG_COLS*RING_BG_ROWS];
+#include "hmm_ring_copy.inc"
 unsigned ring_background_column(int x){const int v=x%int(RING_BG_COLS);return unsigned(v<0?v+int(RING_BG_COLS):v);}
 unsigned ring_background_slot(int x,int y){return ring_background_column(x)*RING_BG_ROWS+(unsigned(y)&15);}
 void ring_background_empty(uint32_t address,unsigned bank,unsigned slot){
@@ -82,14 +83,18 @@ bool ring_pixels(RingCell &cell){
     }
     cell.bytes=out;return true;
 }
-bool ring_upload(RingCell &cell,uint32_t &address,uint32_t background,unsigned bank){
+bool ring_upload(RingCell &cell,uint32_t &address,uint32_t background,unsigned bank,RingCopyQueue &copies){
     bool composed=false;
     if(!cell.bytes){Prof prep(P_TILEPREP);if(!ring_pixels(cell)){cell.usable=false;return false;}composed=true;}
     const unsigned slot=ring_background_slot(cell.x,cell.y);
     if(ring_background_ids[bank][slot]!=cell.id){
         Prof prep(P_TILEPREP);
-        if(!composed){if(!ring_pixels(cell)){cell.usable=false;return false;}composed=true;}
-        put(background+(slot&15)*1024,ring_pixels_buffer,256);ring_background_ids[bank][slot]=cell.id;++ring_builds;
+        const uint32_t target=background+(slot&15)*1024;
+        if(!copies.copy(cell,bank,slot,target)){
+            if(!composed){if(!ring_pixels(cell)){cell.usable=false;return false;}composed=true;}
+            put(target,ring_pixels_buffer,256);ring_background_ids[bank][slot]=cell.id;
+        }
+        ++ring_builds;
     }
     const unsigned shade_bytes=cell.bytes-1024;if(!shade_bytes){address=0;return true;}
     int upload=0;
@@ -173,9 +178,10 @@ bool emit_ring(const Draw &layer){
     const uint32_t pal=palette_address(0),shade=ring_shade_palette();
     // Codex: полосы по 16 КиБ размещаются независимо. После окна героя не
     // требуется непрерывный блок 336 КиБ; закреплены только видимые колонки.
-    const unsigned bank=ring_build_bank;uint32_t background[RING_BG_COLS];
+    const unsigned bank=ring_build_bank;uint32_t background[RING_BG_COLS];RingCopyQueue copies;
     for(int x=ring_x;x<ring_x+ring_cols;++x){const unsigned col=ring_background_column(x);int upload;
         if(!hft_cache_get(&textures,UINT64_C(0xd000000000000000)|(bank*RING_BG_COLS+col),RING_BG_BYTES,&background[col],&upload)){ring_expand();return false;}
+        ring_background_entries[bank][col]=uint16_t(textures.last_entry);
         if(upload)std::memset(ring_background_ids[bank]+col*16,0,16*sizeof(uint64_t));
     }
     // Codex: клетки не пересекаются. Сначала их непрозрачные основы, затем
@@ -185,10 +191,11 @@ bool emit_ring(const Draw &layer){
         const uint32_t address=background[ring_background_column(x)];auto *p=ring_cell(x,y);
         if(!p||!p->valid){ring_background_empty(address,bank,ring_background_slot(x,y));continue;}auto &cell=*p;
         const bool was_cached=cell.frame_cached;
-        cell.frame_cached=cell.usable&&ring_upload(cell,cell.frame_address,address,bank);
+        cell.frame_cached=cell.usable&&ring_upload(cell,cell.frame_address,address,bank,copies);
         if(was_cached!=cell.frame_cached)ring_live_revision=0;
-        if(cell.frame_cached)++ring_hits;else {++ring_fallbacks;ring_background_empty(address,bank,ring_background_slot(x,y));}
+        if(cell.frame_cached)++ring_hits;else {copies.flush();++ring_fallbacks;ring_background_empty(address,bank,ring_background_slot(x,y));}
     }
+    copies.flush();
     // Codex: одна вершина на колонку вместо вершины на каждую клетку.
     // Кольцевые строки выбирает аппаратный WRAP_Y, прокрутка меняет TRANSFORM_F.
     set(0x05000000);word(0x07804000);word(0x28000001);

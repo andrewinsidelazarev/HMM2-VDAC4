@@ -11,12 +11,13 @@
 namespace fheroes2 {
 // Xtensa's int32_t is long; keep that distinct type in the Windows fixture too.
 struct Point {long x=0,y=0;bool operator<(const Point &p)const{return x==p.x?y<p.y:x<p.x;}};
-struct ObjectRenderingInfo {struct Area {int width=1,height=1;} area;Point imageOffset;uint32_t icnIndex=0;};
+struct ObjectRenderingInfo {struct Area {int width=1,height=1;} area;Point imageOffset;uint32_t icnIndex=0;uint8_t alphaValue=255;};
 }
 template<class T> struct Sequence:std::vector<T>{static void release_unused(){}};
 constexpr int DIRECTION_ALL=255;
 struct World {int w()const{return 145;}int h()const{return 145;}struct Tile {int getFogDirection()const{return 0;}};Tile getTile(int,int)const{return {};}} world;
-int hmm_gpu_ring_need(int,int){return 1;}
+static bool check_skipped=false;
+int hmm_gpu_ring_need(int x,int){return !check_skipped || x%3==0;}
 #include "hmm_map_records.inc"
 static uint32_t rng=0x41672a91;
 static uint32_t next(){rng=rng*1664525+1013904223;return rng;}
@@ -33,9 +34,31 @@ static void check(unsigned count,unsigned range,bool extremes=false){
     }
     if(p!=end)throw std::runtime_error("extra queue entry");
 }
+static void skipped(){
+    check_skipped=true;
+    struct Ref{uint32_t id;uint8_t alpha;bool hero,skip;};
+    HmmTileImages queue;std::map<fheroes2::Point,std::deque<Ref>> reference;
+    for(unsigned i=0;i<8192;++i){
+        fheroes2::Point p{long(int(next()%33)-16),long(int(next()%33)-16)};
+        fheroes2::ObjectRenderingInfo info;info.icnIndex=i;info.alphaValue=i%3==0?0:i%3==1?37:255;
+        hmm_hero_records=(i&4)!=0;Ref r{i,info.alphaValue,hmm_hero_records,p.x%3!=0};
+        if(next()&1){queue[p].emplace_front(info);reference[p].push_front(r);}else{queue[p].emplace_back(info);reference[p].push_back(r);}
+    }
+    auto ordered=queue.ordered();auto at=ordered.begin();unsigned skips=0,callbacks=0;
+    for(const auto &cell:reference)for(const auto &r:cell.second){
+        if(!(at!=ordered.end()))throw std::runtime_error("missing record");const auto v=*at;++at;
+        if(v.offset.x!=cell.first.x||v.offset.y!=cell.first.y||v.hero!=r.hero||v.skip!=r.skip)throw std::runtime_error("skip order/flags");
+        if(r.skip){++skips;callbacks+=v.info.alphaValue!=0;if(bool(v.info.alphaValue)!=bool(r.alpha))throw std::runtime_error("skip alpha predicate");}
+        else if(v.info.icnIndex!=r.id||v.info.alphaValue!=r.alpha)throw std::runtime_error("visible payload");
+    }
+    if(at!=ordered.end()||skips<1000||callbacks<1000)throw std::runtime_error("skip coverage");
+    std::printf("SKIP QUEUE OK8192 records; metadata=%zu bytes skips=%u callbacks=%u\n",sizeof(HmmTileImages::Piece),skips,callbacks);
+    check_skipped=false;hmm_hero_records=false;
+}
 int main(){
     _putenv_s("HMM2_QUEUE_SORT_VERIFY","1");
     for(unsigned n:{0u,1u,2u,31u,32u,4095u,4096u,4097u,32768u,32769u}){check(n,17);check(n,1001);check(n,7,true);}
     for(unsigned i=0;i<256;++i)check(next()%4097,(i&1)?245:17);
+    skipped();
     puts("QUEUE SORT OK 286 map/deque cases; fronts/backs, duplicates, signed coordinates, extrema, 4096/32768 boundaries");
 }

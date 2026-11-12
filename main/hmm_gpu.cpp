@@ -156,7 +156,7 @@ void map_clips_clear(){}
  * (hmm_gpu_map_view запишет всё заново). Память отдаётся в первом же кадре, до выделений боя или города: на плате вход в бой
  * с Alteris забрал свободную PSRAM с 1,09 МБ до 244 КБ, и отказ malloc сбросил кэши. Заместителя карты на экране уже нет. */
 bool map_released;
-void map_release_covered(){
+HMM_SIZE_RENDER void map_release_covered(){
     ring_clear();hmm_ring_world_clear();
     std::vector<uint8_t>().swap(rehandle_route);rehandle_words=0;
     map_active=false;map_cache_clear();std::vector<MapPart>().swap(map_parts);Sequence<Draw>().swap(map_draws);
@@ -296,7 +296,7 @@ void publish_dl(){
         if(at<lastwords&&dl[at]==lastdl[at]){++at;continue;}
         const unsigned begin=at++;unsigned end=at;
         // Codex: короткие неизменные промежутки дешевле послать одним пакетом LINK.
-        while(at<words&&at-end<8){if(at>=lastwords||dl[at]!=lastdl[at])end=at+1;++at;}
+        while(at<words&&at-end<64){if(at>=lastwords||dl[at]!=lastdl[at])end=at+1;++at;}
         put(dl_address+begin*4,dl+begin,end-begin);at=end;
     }
     append_dl(words);
@@ -415,7 +415,7 @@ HMM_RENDER_NOINLINE void hmm_render_job_pixels(void *arg){
 // карты и интерфейса (texture_missed) пересобираются в следующем. Прежде здесь был hmm_fail («RAM_G atlas capacity»).
 struct Texture {uint32_t address;unsigned stride,height,cell;bool missing=false;};
 bool texture_missed;
-Texture texture_missing(unsigned bytes,const char *what){
+HMM_SIZE_RENDER Texture texture_missing(unsigned bytes,const char *what){
     static unsigned reports;
     if(reports<8){++reports;unsigned cached=0,shown=0,building=0,free=0;
         for(const auto &e:textures.entries)if(e.valid){if(e.pins&4)cached+=e.pages;if(e.pins&(1u<<displayed))shown+=e.pages;if(e.pins&(1u<<textures.build_slot))building+=e.pages;}
@@ -818,7 +818,7 @@ constexpr uint32_t LOADER_MARK=0x07fff0,LOADER_CHIPID=0x0c0000,LOADER_PICTURE=0x
 #include "hmm_splash.inc"
 bool loader_active;unsigned loader_shown;uint32_t loader_ticked;
 constexpr uint32_t loader_vertex(int x,int y){return 0x40000000u|(uint32_t(x*16)<<15)|uint32_t(y*16);}
-bool loader_begin(){
+HMM_SIZE_RENDER bool loader_begin(){
     if(!cursor_live())return false;
     uint32_t mark[4];for(unsigned i=0;i<4;++i)if(hmm_core->ft_read(LOADER_MARK+i*4,&mark[i])!=ZM_OK)return false;
     if(mark[0]!=0x504c4456u)return false;
@@ -828,7 +828,7 @@ bool loader_begin(){
 // Codex: одна вершина открывает по точке готовую полосу; SCISSOR защищает рамку и торцы.
 // Клод: список экрана загрузки при заполнении shown точек — общий для задачи курсора и loader_finish.
 constexpr unsigned LOADER_WORDS=26;
-void loader_list(unsigned shown,uint32_t (&list)[LOADER_WORDS]){
+HMM_SIZE_RENDER void loader_list(unsigned shown,uint32_t (&list)[LOADER_WORDS]){
     const uint32_t words[LOADER_WORDS]={0x02000000,0x26000007,0x27000004,0x04ffffff,0x100000ff,0x05000000,0x01000000|LOADER_PICTURE,0x07380100,0x28000009,0x08000100,0x29000009,0x1f000001,loader_vertex(0,0),
         0x21000000,0x22000000,0x1b000000|(LOADER_X<<11)|LOADER_TOP,0x1c000000|(LOADER_FILL<<12)|(LOADER_BOTTOM-LOADER_TOP),
         0x1f000009,0x0e000010,0x04000000,0x10000000|LOADER_MASK_ALPHA,loader_vertex(LOADER_X+shown+1,LOADER_TOP-2),
@@ -844,10 +844,10 @@ bool loader_tick(){
     if(hmm_core->ft_write(dl_address,list,LOADER_WORDS)!=ZM_OK||!task_append(LOADER_WORDS))return false;
     swap=2;return hmm_core->ft_write(0x302054,&swap,1)==ZM_OK;
 }
-void video_mode_game(){uint32_t v=0;put(0x302070,&v,1);v=640;put(0x302034,&v,1);v=480;put(0x302048,&v,1);v=1;put(0x302070,&v,1);}
+HMM_SIZE_RENDER void video_mode_game(){uint32_t v=0;put(0x302070,&v,1);v=640;put(0x302034,&v,1);v=480;put(0x302048,&v,1);v=1;put(0x302070,&v,1);}
 // Codex: до первого кадра RAM_G занят только блоком DL 0..8191, меткой и восстановлением CHIPID.
 // Codex: после чёрного списка и смены режима текстуры могут занять место заставки; новых буферов у неё нет.
-void loader_finish(){
+HMM_SIZE_RENDER void loader_finish(){
     GpuBusy busy;loader_active=false;
     uint32_t v;do{if(hmm_core->ft_read(0x302054,&v)!=ZM_OK)hmm_fail("Loader DLSWAP read");}while(v);
     // Клод: полоса шла к концу всё медленнее (шаг — остаток/64) и обрывалась первым кадром игры, не дойдя до конца
@@ -950,7 +950,7 @@ extern "C" int hmm_gpu_move_cursor(int x,int y){return cursor_apply(x,y,false);}
 namespace {
 constexpr uint32_t CLIP_FIFO=256*1024;constexpr uint8_t CLIP_PIN=8;
 uint32_t clip_fifo;
-uint32_t clip_get(uint64_t key,uint32_t bytes){
+HMM_SIZE_RENDER uint32_t clip_get(uint64_t key,uint32_t bytes){
     uint32_t address;int upload;
     if(!hft_cache_get(&textures,UINT64_C(0x5000000000000000)|key,bytes,&address,&upload))hmm_fail("RAM_G clip capacity");
     textures.entries[textures.last_entry].pins|=CLIP_PIN;return address;
@@ -1042,8 +1042,8 @@ HMM_RENDER_NOINLINE bool rehandle_dl_full(){
     const unsigned n=words;unsigned vertices=0;
     for(unsigned i=0;i<n;++i)if((dl[i]>>30)==2)++vertices;
     if(!vertices||vertices>=NONE)return false;
-    struct Work{uint32_t fields[STATES][5],in[32][5],out[32][5];uint16_t hash[HASH],first[STATES],input_state[32],held[32];
-        uint8_t holder[STATES],known[32],out_known[32];};
+    struct Work{uint32_t fields[STATES][5],in[32][5];uint16_t hash[HASH],first[STATES],input_state[32],held[32];
+        uint8_t holder[STATES],known[32];};
     std::unique_ptr<Work> work(new(std::nothrow) Work);std::unique_ptr<uint16_t[]> order(new(std::nothrow) uint16_t[size_t(vertices)*2]);
     if(!work||!order)return false;
     uint16_t *const state_of=order.get(),*const next=state_of+vertices;
@@ -1069,7 +1069,7 @@ HMM_RENDER_NOINLINE bool rehandle_dl_full(){
     // Следующее использование того же состояния после каждой вершины; first — первое использование.
     std::fill_n(work->first,states,NONE);
     for(unsigned v=count;v--;){const unsigned s=state_of[v];next[v]=work->first[s];work->first[s]=uint16_t(v);}
-    auto &out=work->out;auto &out_known=work->out_known;unsigned out_cur=0;
+    unsigned out_cur=0;
     /* Вход переносится в конец буфера dl, результат пишется с его начала: местами результат длиннее входа (ручку пришлось
      * вытеснить там, где вход её держал), и на месте он обгонял непрочитанные слова (обход Alteris, вид 81,51).
      * Клод: проход один (прежде — пробный и рабочий): если результат не короче входа или догнал непрочитанное, вход возвращается
@@ -1082,7 +1082,7 @@ HMM_RENDER_NOINLINE bool rehandle_dl_full(){
     std::memmove(dl+gap,dl,n*4);const uint32_t *const source=dl+gap;
     std::fill_n(work->holder,states,uint8_t(0xff));
     // В начале списка текущая ручка — 0 (контекст FT812 сбрасывается; так же считает word() по defaults), поля ручек неизвестны.
-    std::memset(out_known,0,sizeof(out_known));auto &held=work->held;std::fill_n(held,32,NONE);
+    auto &held=work->held;std::fill_n(held,32,NONE);
     uint32_t far[32];std::fill_n(far,32,0x10000u);
     unsigned o=0,v=0,p=0;bool ok=true;
     for(unsigned i=0;i<n&&ok;++i){const uint32_t w=source[i];const unsigned op=w>>24;
@@ -1093,17 +1093,36 @@ HMM_RENDER_NOINLINE bool rehandle_dl_full(){
                 unsigned best_far=0,ties=0;
                 for(unsigned c=0;c<32;++c){if(far[c]>best_far){best_far=far[c];ties=1;}else if(far[c]==best_far)++ties;}
                 unsigned best=0,best_cost=~0u;
-                for(unsigned c=0;c<32;++c){if(far[c]!=best_far)continue;
+                // This state has no holder, so every known binding differs
+                // in at least one field. Only the current handle avoids a
+                // HANDLE command; reaching this bound cannot change tie order.
+                unsigned current_cost=6;
+                if(ties>1&&far[out_cur]==best_far){
+                    if(held[out_cur]==NONE)current_cost=5;
+                    else {const auto &a=work->fields[held[out_cur]];const auto &b=work->fields[s];
+                        current_cost=(a[0]!=b[0])+(a[1]!=b[1])+(a[2]!=b[2])+(a[3]!=b[3])+(a[4]!=b[4]);}
+                }
+                // Only the current handle could cost one word. Check it once
+                // before scanning; all other candidates need at least two.
+                if(current_cost<6){best=out_cur;best_cost=current_cost;}
+                if(current_cost<=1)best=out_cur;
+                else for(unsigned c=0;c<32;++c){if(far[c]!=best_far)continue;
                     if(ties==1){best=c;break;}
+                    if(best_cost==2&&c>=best)break;
+                    if(c==out_cur&&current_cost<6)continue;
                     unsigned cost=c!=out_cur;
-                    if(!out_known[c])cost+=5;
-                    else if(out_known[c]==31){const auto &a=out[c];const auto &b=work->fields[s];cost+=(a[0]!=b[0])+(a[1]!=b[1])+(a[2]!=b[2])+(a[3]!=b[3])+(a[4]!=b[4]);}
-                    else for(unsigned f=0;f<5;++f)cost+=!(out_known[c]&(1u<<f))||out[c][f]!=work->fields[s][f];
-                    if(cost<best_cost){best=c;best_cost=cost;}}
-                h=best;if(held[h]!=NONE)work->holder[held[h]]=0xff;held[h]=uint16_t(s);work->holder[s]=uint8_t(h);
+                    if(held[c]==NONE)cost+=5;
+                    else {const auto &a=work->fields[held[c]];const auto &b=work->fields[s];
+                        cost+=a[0]!=b[0];if(cost>best_cost||(cost==best_cost&&c>=best))continue;
+                        cost+=a[2]!=b[2];if(cost>best_cost||(cost==best_cost&&c>=best))continue;
+                        cost+=a[1]!=b[1];if(cost>best_cost||(cost==best_cost&&c>=best))continue;
+                        cost+=(a[3]!=b[3])+(a[4]!=b[4]);}
+                    if(cost<best_cost||(cost==best_cost&&c<best)){best=c;best_cost=cost;if(cost==2)break;}}
+                h=best;const unsigned previous=held[h];if(previous!=NONE)work->holder[previous]=0xff;
                 if(h!=out_cur){put[k++]=0x05000000|h;out_cur=h;}
                 for(unsigned f=0;f<5;++f){const uint32_t need=work->fields[s][f];
-                    if(!(out_known[h]&(1u<<f))||out[h][f]!=need){put[k++]=need;out[h][f]=need;out_known[h]|=1u<<f;}}
+                    if(previous==NONE||work->fields[previous][f]!=need)put[k++]=need;}
+                held[h]=uint16_t(s);work->holder[s]=uint8_t(h);
             }
             far[h]=after==NONE?0x10000u:after;put[k++]=(w&~(31u<<7))|(h<<7);
             // Результат не должен догнать ещё не прочитанные слова входа (вход лежит с dl+gap).
@@ -1129,7 +1148,7 @@ HMM_RENDER_NOINLINE bool rehandle_dl_full(){
 #endif
     // Отслеживание повторов word() — по новому состоянию ручек: дальше идут подпись и курсор.
     std::memset(compact_mask,0,sizeof(compact_mask));
-    for(unsigned h=0;h<32;++h){compact_mask[h]=out_known[h];std::memcpy(compact_bitmap[h],out[h],20);}
+    for(unsigned h=0;h<32;++h)if(held[h]!=NONE){compact_mask[h]=31;std::memcpy(compact_bitmap[h],work->fields[held[h]],20);}
     compact_handle=out_cur;compact_valid[5]=1;compact_state[5]=0x05000000|out_cur;
     return true;
 }
@@ -1153,6 +1172,7 @@ extern "C" HMM_SIZE_RENDER void hmm_gpu_scene_frame(const uint8_t*,const uint8_t
     // Клод: пик слоёв кадра до клеток за 100 кадров (peak= в HMM2 GPU): по нему видно, какой экран упирается в 800 слоёв и DL.
     stat_draws_peak=std::max(stat_draws_peak,unsigned(draws.size()+map_draws.size()));
 rebuild:
+    bool handle_attempted=false;
     cluster_failed=cluster_used=skeleton_used=false;
     rehandle_force_full=handle_retry;rehandle_fast_used=false;
     body_actor_spans.clear();body_actor_collect=false;
@@ -1245,7 +1265,11 @@ rebuild:
         cluster_retry=true;++cluster_fallbacks;ring_clusters_clear(false);ring_sprite_plan_clear();ring_live_revision=0;goto rebuild;
     }
     before_rehandle=words;
-    if(words>REHANDLE_FROM&&!dl_overflow)rehandle_dl();
+    // A map that already fits need not pay for a global handle schedule.
+    // Leave room for cursor/status; a late overflow retries the original full
+    // scheduler before any UI reduction or software-tile fallback.
+    const unsigned rehandle_from=ring_frame&&full_map&&!tiled_retry&&map_covers.empty()&&!body_actor_collect?2000u:REHANDLE_FROM;
+    if((words>rehandle_from||handle_retry)&&!dl_overflow){handle_attempted=true;rehandle_dl();}
     after_rehandle=words;
     if(reuse_body&&body_dynamic&&(dl_overflow||words>2000||texture_missed)){
         actor_retry=true;body_plan_clear();goto rebuild;
@@ -1316,7 +1340,7 @@ rebuild:
     static std::vector<uint32_t> raw_dl;raw_dl.assign(dl,dl+words);
 #endif
     if(compacted){if(!bitmap_prior_valid)previous_bitmap_state();compact_bitmap_constants();}
-    if((dl_overflow||words>DL_LIMIT)&&rehandle_fast_used&&!handle_retry){
+    if((dl_overflow||words>DL_LIMIT)&&!handle_retry&&(rehandle_fast_used||!handle_attempted)){
         handle_retry=true;body_plan_clear();goto rebuild;
     }
     // Codex: геометрия малого обновления может идти без общей обработки. Если DL вырос,
@@ -1472,7 +1496,7 @@ rebuild:
     frame_bytes=traffic;frame_link=link_ms;traffic=link_ms=gpu_upload_bytes=0;
 }
 // Codex: только наполнение существующих кэшей, без команд рисования и смены кадров.
-void hmm_gpu_warm_sprite(uint32_t key){
+HMM_SIZE_RENDER void hmm_gpu_warm_sprite(uint32_t key){
     const unsigned cpu=key>>30;key&=0x3fffffffu;
     const auto &im=hmm_resource_get(key);
     const bool effect=(hmm_resource_flags(im)&2)!=0;

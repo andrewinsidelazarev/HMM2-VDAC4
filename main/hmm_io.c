@@ -131,7 +131,10 @@ void hmm_remote_graphics(uint32_t offset,uint32_t address,uint32_t size) {
     if(!size||(offset&511)||(size&511)||address>=0x300000||size>0x300000-address
        ||offset>hmm_package_size||size>hmm_package_size-offset)hmm_fail("Invalid graphics transfer");
     while(size){
-        uint16_t count=size>8192?8192:(uint16_t)size;
+        /* ServeGraphics already divides a request into 8 KiB DMA chunks.
+         * Two chunks share one E6/77/F7 exchange, then release the SD channel
+         * so a waiting audio read retains priority. No staging buffer added. */
+        uint16_t count=size>16384?16384:(uint16_t)size;
         uint8_t request[12];
         // Клод: пока идёт E6, задача курсора не трогает сопроцессор: очередь Evo в RAM_G держит 8 байт (FT_STAT 25).
         hmm_gpu_busy_enter();channel_enter();
