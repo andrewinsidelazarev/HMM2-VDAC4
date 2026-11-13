@@ -1216,7 +1216,7 @@ bool hmm_gpu_cpu_begin(){const bool saved=materializing;materializing=true;retur
 bool hmm_gpu_fade_ready(int x,int y,int w,int h){return ready&&!materializing&&x<=0&&y<=0&&x+w>=640&&y+h>=480&&canvases.find(&fheroes2::Display::instance())!=canvases.end();}
 void hmm_gpu_cpu_end(bool saved){materializing=saved;}
 // Клод: кадр ролика — непрозрачный слой fill+raw; растеризатор CPU видит его заливкой, а DL рисует битмап.
-void hmm_gpu_clip_draw(fheroes2::Image &im,int x,int y,int w,int h,unsigned slot){
+HMM_SIZE_RENDER void hmm_gpu_clip_draw(fheroes2::Image &im,int x,int y,int w,int h,unsigned slot){
     if(!ready||materializing)return;
     const auto r=intersect({x,y,w,h},bounds(im));if(!r.w||!r.h)return;
     region_write(im,r);

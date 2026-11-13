@@ -17,6 +17,7 @@ void hmm_video_close(void);
 void hmm_gpu_init(void);
 void hmm_gpu_frame(const uint8_t *pixels,const uint8_t *rgb,int width,int height);
 void hmm_gpu_stats(uint32_t *bytes,uint32_t *prepare,uint32_t *transfer);
+void hmm_gpu_wait_swap(void);
 /* Клод: участок, где задача курсора не трогает сопроцессор и DL; вложенность разрешена. */
 /* Клод: начало восстановленной памяти упакованных данных ELF занято звуком (OGG и окна звуков); дальше — базовые окна кэша DAT. */
 #define HMM_RECYCLED_AUDIO_BYTES (144u*1024u)
@@ -33,6 +34,9 @@ void hmm_input_frame(void);
 void hmm_input_stats(uint32_t *out,int reset);
 hmm_file *hmm_fopen(const char *path, const char *mode);
 int hmm_fclose(hmm_file *file);
+/* Publish a completed, successfully closed files/save stream. Early close aborts
+ * publication unless Game::Save explicitly commits after serialization succeeds. */
+int hmm_save_commit(void);
 uint32_t hmm_file_offset(hmm_file *file);
 size_t hmm_fread(void *dst, size_t size, size_t count, hmm_file *file);
 size_t hmm_fwrite(const void *src, size_t size, size_t count, hmm_file *file);

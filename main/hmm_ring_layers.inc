@@ -118,39 +118,7 @@ void ring_vertex(uint32_t address,uint32_t pal,int x,int y,int tx,int ty,unsigne
     word(0x80000000|(uint32_t(local_x&511)<<21)|(uint32_t(local_y&511)<<12)|(handle<<7));
 }
 HMM_SIZE_RENDER void ring_build_live(Sequence<Draw> &out,int first_x,int first_y,int cols,int rows,std::vector<HeroSlot> *heroes=nullptr){
-    out.clear();
-    struct LiveSource {const RingDraw *draw;int16_t x,y;uint16_t hero=0xffff;};Sequence<LiveSource> parts;uint32_t max_order=0;
-    for(int y=first_y;y<first_y+rows;++y)for(int x=first_x;x<first_x+cols;++x){
-        const auto *p=ring_cell(x,y);if(!p||!p->valid)continue;const auto &cell=*p;
-        const Rect box{x*32,y*32,32,32};const unsigned tail=cell.frame_cached?cell.tail:0;
-        unsigned run=0;
-        for(unsigned j=tail;j<cell.source.size();){const auto &d=cell.source[j];uint16_t slot=0xffff;
-            if(heroes&&ring_hero(d)){
-                if(heroes->size()>=0xffff)throw std::bad_alloc();slot=uint16_t(heroes->size());heroes->push_back({int16_t(x),int16_t(y),uint16_t(run++)});
-                do{++j;}while(j<cell.source.size()&&ring_hero(cell.source[j]));
-            }else ++j;
-            parts.push_back({&d,int16_t(box.x),int16_t(box.y),slot});max_order=std::max(max_order,d.order);
-        }
-    }
-    // Codex: внутри клетки order строго возрастает. Клетки не пересекаются,
-    // поэтому общий порядок по нему сохраняет каждый пиксель и сближает части спрайта.
-    // Codex: стабильная поразрядная сортировка целого номера команды.
-    // Обычно достаточно двух линейных проходов вместо 10–12 слияний в PSRAM.
-    // Равные номера сохраняют исходный порядок клеток, как в прежнем слиянии.
-    {Prof sort_time(P_PARTS);Sequence<LiveSource> scratch;scratch.resize(parts.size());
-    for(unsigned shift=0;shift<32&&(max_order>>shift);shift+=8){
-        unsigned counts[256]{};
-        for(const auto &part:parts)++counts[(part.draw->order>>shift)&255];
-        unsigned at=0;for(auto &count:counts){const unsigned next=at+count;count=at;at=next;}
-        for(const auto &part:parts)scratch[counts[(part.draw->order>>shift)&255]++]=part;
-        parts.swap(scratch);
-    }
-    }
-    for(const auto &part:parts){Draw d;
-        if(part.hero!=0xffff){d.r={part.x,part.y,32,32};d.layer=d.raw=true;d.mask=255;d.mapping=part.hero;}
-        else{d=*part.draw;d.r.x+=part.x;d.r.y+=part.y;}
-        out.push_back(std::move(d));
-    }
+#include "hmm_ring_merge.inc"
     // Codex: соседние части одного экземпляра становятся целым спрайтом;
     // проверка перекрытий join_layers сохраняет исходный порядок объектов.
     // Codex: CLOF32 хранит четыре фазы в общей периодической текстуре.

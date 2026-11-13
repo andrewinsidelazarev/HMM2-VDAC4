@@ -8,7 +8,7 @@ prefix=(s/'tests/stage1_input.c').read_text(encoding='utf-8').split('int main(vo
 prefix=prefix.replace('void hmm_gpu_busy_enter(void){}void hmm_gpu_busy_leave(void){}','static unsigned gpu_busy;void hmm_gpu_busy_enter(void){++gpu_busy;}void hmm_gpu_busy_leave(void){assert(gpu_busy);--gpu_busy;}')
 body=r'''
 #ifndef GRAPHICS_REQUEST_LIMIT
-#define GRAPHICS_REQUEST_LIMIT 16384
+#define GRAPHICS_REQUEST_LIMIT 32768
 #endif
 static unsigned calls,acks,rejects,bytes_done,expected_source,expected_target;static uint8_t memory[0x300000];
 static uint8_t pattern(unsigned at){return (uint8_t)(at*37u+(at>>9)*13u);}
@@ -18,7 +18,7 @@ static unsigned u32(const uint8_t *p){return p[0]|(unsigned)p[1]<<8|(unsigned)p[
 static int gfx_event(uint8_t cmd,const void *data,uint16_t n,uint32_t timeout){
  const uint8_t *p=data;assert(cmd==0xe6&&n==12&&timeout==1000&&gpu_busy==1);
  const unsigned seq=p[0]|p[1]<<8,source=u32(p+2),target=u32(p+6),size=p[10]|p[11]<<8;
- assert(source==expected_source+bytes_done&&target==expected_target+bytes_done&&size&&size<=16384&&!(size&511));
+ assert(source==expected_source+bytes_done&&target==expected_target+bytes_done&&size&&size<=GRAPHICS_REQUEST_LIMIT&&!(size&511));
  for(unsigned at=0;at<size;at+=8192){const unsigned count=size-at<8192?size-at:8192;for(unsigned i=0;i<count;++i)memory[target+at+i]=pattern(source+at+i);}
  uint8_t answer[3]={(uint8_t)(seq+1),(uint8_t)((seq+1)>>8),0};
  const unsigned accepted=acks;hmm_command(0x77,answer,3);assert(acks==accepted);
@@ -43,7 +43,7 @@ inc=[VC/'include',*[KIT/'Include/10.0.26100.0'/n for n in ('ucrt','shared','um')
 objects=[]
 for p in ((Path(reference) if baseline else s/'main/hmm_io.c'),s/'main/hmm_input.c',source):
  obj=out/(p.stem+'.obj');objects.append(obj)
- cmd=[str(VC/'bin/Hostx64/x86/cl.exe'),'/nologo','/O2','/TC','/std:c11','/MT','/utf-8','/DSDL_MAIN_HANDLED','/DGRAPHICS_REQUEST_LIMIT='+str(8192 if baseline else 16384),'/D_CRT_SECURE_NO_WARNINGS','/FI'+str(s/'tests/stage1_atomic.h'),*['/I'+str(p) for p in inc],'/c',str(p),'/Fo'+str(obj)]
+ cmd=[str(VC/'bin/Hostx64/x86/cl.exe'),'/nologo','/O2','/TC','/std:c11','/MT','/utf-8','/DSDL_MAIN_HANDLED','/DGRAPHICS_REQUEST_LIMIT='+str(8192 if baseline else 32768),'/D_CRT_SECURE_NO_WARNINGS','/FI'+str(s/'tests/stage1_atomic.h'),*['/I'+str(p) for p in inc],'/c',str(p),'/Fo'+str(obj)]
  r=subprocess.run(cmd,cwd=out,capture_output=True);(out/(p.stem+'.log')).write_bytes(r.stdout+r.stderr);assert not r.returncode,(r.stdout+r.stderr).decode(errors='replace')
 r=subprocess.run([str(VC/'bin/Hostx64/x86/link.exe'),'/NOLOGO','/SUBSYSTEM:CONSOLE','/OUT:'+str(out/'test.exe'),*map(str,objects),*['/LIBPATH:'+str(p) for p in libs]],cwd=out,capture_output=True);(out/'link.log').write_bytes(r.stdout+r.stderr);assert not r.returncode,(r.stdout+r.stderr).decode(errors='replace')
 r=subprocess.run([str(out/'test.exe')],cwd=out,capture_output=True);(out/'result.log').write_bytes(r.stdout+r.stderr);assert not r.returncode,(r.stdout+r.stderr).decode(errors='replace');print(r.stdout.decode())

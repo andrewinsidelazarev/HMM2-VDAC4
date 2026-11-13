@@ -646,6 +646,8 @@ bool IS_DEBUG(int,int);
         s=env_audio_patch(p.name,s)
         from patch_monster_recipes import patch as monster_recipes_patch
         s=monster_recipes_patch(p.name,s)
+        from patch_save_transactions import patch as save_transactions_patch
+        s=save_transactions_patch(p.name,s)
         dest=STAGED/rel;dest.parent.mkdir(parents=True,exist_ok=True)
         if not dest.exists() or dest.read_text(encoding='utf-8')!=s:dest.write_text(s,encoding='utf-8')
     return STAGED

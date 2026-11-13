@@ -37,6 +37,8 @@ static uint32_t ui_times[128]={2500,5000,7500,10000,16000,22000,30000,35000,4000
 static uint32_t package_size,sd_latency[2];
 static unsigned exit_test;static volatile unsigned task_finished,exit_loading_active;
 static uint32_t ft_fault_after;static unsigned ft_fault_started;
+/* Test fixture only: successful register reads with a permanently pending swap. */
+static uint32_t swap_fault_after;static unsigned swap_fault_started;
 static uint32_t cmd_torn_after,cmd_torn_words;static unsigned cmd_torn_done,cmd_cursor_resumed;
 static uint32_t alloc_fault_after,alloc_fault_min;static unsigned alloc_fault_started;
 static int is_game_task(void);
@@ -331,6 +333,10 @@ static int ft_write(uint32_t addr,const uint32_t *words,uint32_t count){
     xSemaphoreGive(trace_lock);return ZM_OK;
 }
 static int ft_read(uint32_t addr,uint32_t *value){
+    if(swap_fault_after&&frames>=swap_fault_after&&addr==0x302054){
+        if(!swap_fault_started){swap_fault_started=1;logline("QEMU: injected stuck DLSWAP frame=%u",frames);}
+        *value=2;return ZM_OK;
+    }
     if(!ft_fault_started&&ft_fault_after&&frames>=ft_fault_after&&addr==0x3020f8&&xTaskGetCurrentTaskHandle()==game_handle){
         ft_fault_started=1;logline("QEMU: injected FT CMD fault frame=%u",frames);
     }
@@ -361,6 +367,8 @@ void app_main(void){
     if(control>=0){host_read(control,&exit_test,4);host_close(control);testing=1;frame_limit=0xffffffffu;if(exit_test<3)key_count=0;}
     control=host_open(HMM2_TEST_BASE "/qemu_stage1/ft_fault.bin",1);
     if(control>=0){host_read(control,&ft_fault_after,4);host_close(control);}
+    control=host_open(HMM2_TEST_BASE "/qemu_stage1/swap_fault.bin",1);
+    if(control>=0){host_read(control,&swap_fault_after,4);host_close(control);}
     control=host_open(HMM2_TEST_BASE "/qemu_stage1/cmd_torn.bin",1);
     if(control>=0){host_read(control,&cmd_torn_after,4);host_read(control,&cmd_torn_words,4);host_close(control);}
     control=host_open(HMM2_TEST_BASE "/qemu_stage1/alloc_fault.bin",1);
@@ -466,11 +474,11 @@ void app_main(void){
             if(exit_test<2||!exit_step)app->command(0x75,input,n);
             if(app->poll)app->poll(millis());
             delay(50);
-            if((ft_fault_after||alloc_fault_after) && task_finished){
+            if((ft_fault_after||alloc_fault_after||swap_fault_after) && task_finished){
                 app->command(0x73,NULL,0);unsigned state=response[0];app->stop();
                 logline("QEMU: exit %s fault_injected=%u state=%u core=%u host=%s task_finished=%u",
-                    (ft_fault_started||alloc_fault_started)&&state==255&&tang_core==1&&!(ft_cfg&4)?"verified":"FAILED",
-                    ft_fault_started||alloc_fault_started,state,tang_core,(ft_cfg&4)?"ESP":"Evo",task_finished);
+                    (ft_fault_started||alloc_fault_started||swap_fault_started)&&state==255&&tang_core==1&&!(ft_cfg&4)?"verified":"FAILED",
+                    ft_fault_started||alloc_fault_started||swap_fault_started,state,tang_core,(ft_cfg&4)?"ESP":"Evo",task_finished);
                 host_close(trace);capture_done=1;
             }else if(exit_test && task_finished){
                 if(exit_test>=3){

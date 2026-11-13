@@ -12,8 +12,7 @@ def patch(name,s):
         s=s[:at]+'''#ifdef HMM2_PACKED
     std::pair<HmmMonsterParts,HmmMonsterParts> hmmMonsterPartsPair(const Tile &tile,bool editor){
         const auto frames=GetMonsterSpriteIndices(tile,getMonsterFromTile(tile).GetSpriteIndex(),editor);
-        auto body=hmmMonsterRecipe(ICN::MINI_MONSTER_IMAGE,frames);
-        auto shadow=hmmMonsterRecipe(ICN::MINI_MONSTER_SHADOW,frames);
+        auto parts=hmmMonsterRecipePair(frames);
 #ifdef HMM2_HOST
         static const bool verify=std::getenv("HMM2_RECIPE_VERIFY")!=nullptr;
         if(verify){
@@ -22,11 +21,11 @@ def patch(name,s):
                     if(p.tileOffset!=q.tileOffset||p.imageOffset!=q.imageOffset||p.area!=q.area||p.icnId!=q.icnId||
                        p.icnIndex!=q.icnIndex||p.isFlipped!=q.isFlipped||p.alphaValue!=q.alphaValue)return false;
                 }return true;};
-            if(!equal(*body,getMonsterSpritesPerTile(tile,editor))||!equal(*shadow,getMonsterShadowSpritesPerTile(tile,editor)))
+            if(!equal(*parts.first,getMonsterSpritesPerTile(tile,editor))||!equal(*parts.second,getMonsterShadowSpritesPerTile(tile,editor)))
                 throw std::runtime_error("monster recipe differs from original splitter");
         }
 #endif
-        return {body,shadow};
+        return parts;
     }
 #endif
 '''+s[at:]
@@ -49,7 +48,9 @@ extern "C" void hmm_monster_parts_stats(unsigned *hit,unsigned *built,unsigned *
         start=s.index('    void populateStaticTileUnfitObjectInfo(')
         end=s.index('    void populateStaticTileUnfitBackgroundObjectInfo(',start)
         body=s[start:end].replace('std::vector<fheroes2::ObjectRenderingInfo> & imageInfo','const std::vector<fheroes2::ObjectRenderingInfo> & imageInfo').replace('std::vector<fheroes2::ObjectRenderingInfo> & shadowInfo','const std::vector<fheroes2::ObjectRenderingInfo> & shadowInfo').replace('auto & objectInfo :','auto objectInfo :')
-        s=s[:start]+body+s[end:]
+        original_body=body
+        body=body.replace('auto objectInfo :','const auto & objectInfo :').replace('            objectInfo.alphaValue = alphaValue;\n','').replace('.emplace_front( objectInfo )','.emplace_front_alpha( objectInfo, alphaValue )').replace('.emplace_back( objectInfo )','.emplace_back_alpha( objectInfo, alphaValue )')
+        s=s[:start]+'#ifdef HMM2_PACKED\n'+body+'#else\n'+original_body+'#endif\n'+s[end:]
         a='''                auto spriteInfo = getMonsterSpritesPerTile( tile, isEditor );
                 auto spriteShadowInfo = getMonsterShadowSpritesPerTile( tile, isEditor );
 

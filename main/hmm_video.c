@@ -24,10 +24,6 @@ void hmm_video_poll(uint32_t now){
     checked_at=now;hmm_video_check_core();
 }
 static uint32_t returned,interval,engine_ms,prepare_ms,transfer_ms,swap_ms,link_bytes,sd_previous,sd_wait_previous,sd_requests_previous,slept_previous,raster_max,gfx_previous,decode_previous,sfx_previous;
-static void wait_swap(void){
-    uint32_t start=hmm_core->millis(),swap;
-    do{if(!hmm_running)hmm_fail("Application stopped");if(hmm_core->ft_read(0x302054,&swap)!=ZM_OK)hmm_fail("FT812 DLSWAP read failed");if(!swap)return;if((uint32_t)(hmm_core->millis()-start)>2000)hmm_fail("FT812 DLSWAP timeout");hmm_core->delay(1);}while(1);
-}
 int hmm_video_open(void){
     if(opened)return opened==2;
     /* Codex: даже неуспешный ft_open мог уже захватить FT812; общий выход обязан вызвать ft_close. */
@@ -90,7 +86,7 @@ void hmm_video_frame(const uint8_t *pixels,const uint8_t *rgb,int w,int h){
     extern uint32_t hmm_gpu_pending_ms(void);
     uint32_t start=hmm_core->millis(),pending=hmm_gpu_pending_ms(),gap=start-returned;
     engine_ms+=gap>pending?gap-pending:0;
-    wait_swap();swap_ms+=hmm_core->millis()-start;
+    hmm_gpu_wait_swap();swap_ms+=hmm_core->millis()-start;
     hmm_gpu_frame(pixels,rgb,w,h);hmm_input_frame();++hmm_frames;
     uint32_t bytes,prepare,transfer;hmm_gpu_stats(&bytes,&prepare,&transfer);
     link_bytes+=bytes;prepare_ms+=prepare;transfer_ms+=transfer;

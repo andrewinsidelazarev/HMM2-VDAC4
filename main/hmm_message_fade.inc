@@ -55,8 +55,8 @@ HMM_MESSAGE_FN void message_scene_capture(){
     if(!message_scene||!message_scene.unique())message_scene=std::make_shared<MessageCommands>();
     auto &p=message_scene->part;map_cache_release(p);
     p.commands.assign(dl,dl+words);
-    for(unsigned i=0;i<HFT_ENTRIES;++i){auto &e=textures.entries[i];
-        if(e.valid&&(e.pins&(1u<<textures.build_slot))){p.textures.push_back(i);++map_texture_refs[i];e.pins|=4u;}
+    for(unsigned i=0;(i=hft_cache_next_pin(&textures,i,unsigned(textures.build_slot)))<HFT_ENTRIES;++i){auto &e=textures.entries[i];
+        p.textures.push_back(i);++map_texture_refs[i];e.pins|=4u;
     }
 }
 HMM_MESSAGE_FN void message_fade_open(bool popup){

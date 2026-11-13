@@ -1,5 +1,5 @@
 {
-  "build": 134,
+  "build": 138,
   "contains_game_dat": false,
   "requires_game_dat": true,
   "required_dat_path": "GAMES/VDAC4/HMM2 VDAC4/HMM2.DAT",
@@ -18,8 +18,8 @@
     },
     {
       "path": "GAMES/VDAC4/HMM2 VDAC4/HMM2.ELF",
-      "bytes": 1650648,
-      "sha256": "09254619405aefe1e738cb14d45a29de2c97fbcf68bf7db404d391359da394fe"
+      "bytes": 1648464,
+      "sha256": "d854557bd057350a90c49086e6d82575b556563dbf36cc4de6e6f371d38e0a7f"
     },
     {
       "path": "GAMES/VDAC4/HMM2 VDAC4/HSD.ELF",
@@ -84,7 +84,7 @@
     {
       "path": "README.md",
       "bytes": 1702,
-      "sha256": "dd3dff43447709a648e85390b143cafbdc61437d3c4eba6dc7c34c89492cdc04"
+      "sha256": "6399ad0cbf4850327447ca2c024eadb5d975a2d4e11648ac1c946b09641288e8"
     },
     {
       "path": "WC/ESP/OGG.ELF",
@@ -95,5 +95,5 @@
   "launcher_revision": "wc-f7-reserved",
   "physical_speed_measured": true,
   "physical_speed_confirmed": false,
-  "build_notes": "../docs/BUILD134.md"
+  "build_notes": "../docs/BUILD138.md"
 }

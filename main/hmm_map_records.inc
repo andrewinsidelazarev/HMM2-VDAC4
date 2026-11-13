@@ -24,7 +24,7 @@ private:
         static const fheroes2::ObjectRenderingInfo transparent=[](){fheroes2::ObjectRenderingInfo v;v.alphaValue=0;return v;}();
         return alpha?opaque:transparent;
     }
-    void append(const fheroes2::Point &offset,const fheroes2::ObjectRenderingInfo &info,bool front){
+    void append(const fheroes2::Point &offset,const fheroes2::ObjectRenderingInfo &info,bool front,uint8_t alpha){
         // A square wholly inside an unchanged cell cannot reach a dirty cell.
         // Keep unusual cross-cell pieces on the conservative original path.
         const bool skip=info.area.width>0&&info.area.height>0&&info.imageOffset.x>=0&&info.imageOffset.y>=0&&
@@ -34,8 +34,11 @@ private:
              world.getTile(offset.x,offset.y).getFogDirection()==DIRECTION_ALL));
         // Invisible entries still reserve their exact place/order in the map
         // stream, but only their alpha predicate is needed by ring_skip().
-        const uint32_t index=uint32_t(images.size());if(!skip)images.push_back(info);
-        const uint32_t flags=(hmm_hero_records?HERO:0u)|(skip?SKIP:0u)|(info.alphaValue?ALPHA:0u);
+        const uint32_t index=uint32_t(images.size());if(!skip){
+            if(alpha==info.alphaValue)images.push_back(info);
+            else{auto adjusted=info;adjusted.alphaValue=alpha;images.push_back(adjusted);}
+        }
+        const uint32_t flags=(hmm_hero_records?HERO:0u)|(skip?SKIP:0u)|(alpha?ALPHA:0u);
         const int order=int(pieces.size())+1;pieces.push_back(Piece{offset,front?-order:order,index|flags});
     }
     static bool less_piece(const Piece &a,const Piece &b){
@@ -58,8 +61,10 @@ private:
 public:
     struct Slot {
         HmmTileImages &owner;fheroes2::Point offset;
-        void emplace_front(const fheroes2::ObjectRenderingInfo &info){owner.append(offset,info,true);}
-        void emplace_back(const fheroes2::ObjectRenderingInfo &info){owner.append(offset,info,false);}
+        void emplace_front(const fheroes2::ObjectRenderingInfo &info){owner.append(offset,info,true,info.alphaValue);}
+        void emplace_back(const fheroes2::ObjectRenderingInfo &info){owner.append(offset,info,false,info.alphaValue);}
+        void emplace_front_alpha(const fheroes2::ObjectRenderingInfo &info,uint8_t alpha){owner.append(offset,info,true,alpha);}
+        void emplace_back_alpha(const fheroes2::ObjectRenderingInfo &info,uint8_t alpha){owner.append(offset,info,false,alpha);}
     };
     Slot operator[](const fheroes2::Point &offset){return {*this,offset};}
     struct Ordered {
@@ -96,6 +101,24 @@ public:
                 for(const auto &p:pieces){minx=std::min(minx,p.offset.x);maxx=std::max(maxx,p.offset.x);
                     miny=std::min(miny,p.offset.y);maxy=std::max(maxy,p.offset.y);fronts+=p.order<0;}
                 if(int64_t(maxx)-minx<256&&int64_t(maxy)-miny<256){
+                    const unsigned height=unsigned(maxy-miny)+1,cells=(unsigned(maxx-minx)+1)*height;
+                    const unsigned count=unsigned(pieces.size());
+                    if(count+2*cells<=4096){
+                        // Dense visible queues need only links and cell endpoints.
+                        // Reuse the same 8 KiB scratch as the radix fallback.
+                        constexpr uint16_t none=0xffff;
+                        uint16_t *const next=scratch,*const heads=next+count,*const tails=heads+cells;
+                        std::fill_n(heads,cells,none);
+                        for(unsigned i=0;i<count;++i){const auto &p=pieces[i];
+                            const unsigned cell=unsigned(p.offset.x-minx)*height+unsigned(p.offset.y-miny);
+                            auto &head=heads[cell];auto &tail=tails[cell];
+                            if(p.order<0){next[i]=head;if(head==none)tail=uint16_t(i);head=uint16_t(i);}
+                            else{next[i]=none;if(head==none)head=uint16_t(i);else next[tail]=uint16_t(i);tail=uint16_t(i);}
+                        }
+                        unsigned at=0;
+                        for(unsigned cell=0;cell<cells;++cell)for(unsigned i=heads[cell];i!=none;i=next[i])result.indices[at++]=uint16_t(i);
+                        bucket=true;
+                    }else{
                     // First order by insertion: front entries reversed, back entries forward.
                     unsigned front=fronts,back=fronts;
                     for(unsigned i=0;i<pieces.size();++i)result.indices[pieces[i].order<0?--front:back++]=uint16_t(i);
@@ -108,6 +131,7 @@ public:
                     at=0;for(auto &n:offsets){const unsigned next=at+n;n=uint16_t(at);at=next;}
                     for(unsigned j=0;j<pieces.size();++j){const auto i=scratch[j];result.indices[offsets[pieces[i].offset.x-minx]++]=i;}
                     bucket=true;
+                    }
                 }
             }
             if(!bucket)sort_indices(result.indices);

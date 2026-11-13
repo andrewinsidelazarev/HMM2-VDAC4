@@ -139,7 +139,7 @@ HMM_SIZE_RENDER void cached_textures_use(const MapPart &part){
 #else
     constexpr bool touch=true;
 #endif
-    for(auto i:part.textures){auto &entry=textures.entries[i];entry.pins|=1u<<textures.build_slot;
+    for(auto i:part.textures){auto &entry=textures.entries[i];hft_cache_pin(&textures,i,unsigned(textures.build_slot));
         // Replaying cached commands is real texture use too. Otherwise a
         // just-displayed atlas becomes an old eviction victim when a UI opens.
         if(touch)entry.age=++textures.age;
@@ -233,7 +233,9 @@ void compact_bitmap_constants(){
     }
     words=out;
 }
-void put(uint32_t address,const uint32_t *p,unsigned count){
+#include "hmm_swap_fence.inc"
+HMM_SIZE_RENDER void put(uint32_t address,const uint32_t *p,unsigned count){
+    if(address==0x302054)swap_pending=true;
     uint32_t start=hmm_core->millis();
     while(count){unsigned n=std::min(count,1024u);if(hmm_core->ft_write(address,p,n)!=ZM_OK)hmm_fail("FT write failed");traffic+=n*4;address+=n*4;p+=n;count-=n;}
     link_ms+=hmm_core->millis()-start;
@@ -490,7 +492,7 @@ void emit_clip(const Draw &d){
     // player releases CLIP_PIN but a closing window still displays the frame.
     for(unsigned i=0;i<HFT_ENTRIES;++i){auto &e=textures.entries[i];
         if(e.valid&&e.page*HFT_PAGE_BYTES==f.address){
-            e.pins|=1u<<textures.build_slot;e.age=++textures.age;textures.last_entry=i;map_keep_texture();break;
+            hft_cache_pin(&textures,i,unsigned(textures.build_slot));e.age=++textures.age;textures.last_entry=i;map_keep_texture();break;
         }
     }
     // Клод: ручка помечена чужой (address=~0u): обычные PALETTED8 не возьмут её вместе с форматом RGB565.
@@ -835,36 +837,36 @@ HMM_SIZE_RENDER void loader_list(unsigned shown,uint32_t (&list)[LOADER_WORDS]){
         loader_vertex(LOADER_X+LOADER_FILL+2,LOADER_BOTTOM+2),0x21000000,0x23000000,0};
     std::memcpy(list,words,sizeof(words));
 }
-bool loader_tick(){
+HMM_SIZE_RENDER bool loader_tick(){
     if(hmm_core->millis()-loader_ticked<100)return true;
     uint32_t swap;if(hmm_core->ft_read(0x302054,&swap)!=ZM_OK)return false;
     if(swap)return true;
     loader_ticked=hmm_core->millis();loader_shown+=(LOADER_FILL-loader_shown+63)/64;
     uint32_t list[LOADER_WORDS];loader_list(loader_shown,list);
     if(hmm_core->ft_write(dl_address,list,LOADER_WORDS)!=ZM_OK||!task_append(LOADER_WORDS))return false;
-    swap=2;return hmm_core->ft_write(0x302054,&swap,1)==ZM_OK;
+    swap=2;swap_pending=true;return hmm_core->ft_write(0x302054,&swap,1)==ZM_OK;
 }
 HMM_SIZE_RENDER void video_mode_game(){uint32_t v=0;put(0x302070,&v,1);v=640;put(0x302034,&v,1);v=480;put(0x302048,&v,1);v=1;put(0x302070,&v,1);}
 // Codex: до первого кадра RAM_G занят только блоком DL 0..8191, меткой и восстановлением CHIPID.
 // Codex: после чёрного списка и смены режима текстуры могут занять место заставки; новых буферов у неё нет.
 HMM_SIZE_RENDER void loader_finish(){
     GpuBusy busy;loader_active=false;
-    uint32_t v;do{if(hmm_core->ft_read(0x302054,&v)!=ZM_OK)hmm_fail("Loader DLSWAP read");}while(v);
+    uint32_t v;wait_swap_locked();
     // Клод: полоса шла к концу всё медленнее (шаг — остаток/64) и обрывалась первым кадром игры, не дойдя до конца
     // (пользователь, 02.11). Теперь она за несколько кадров дотягивается до конца и держится полной 150 мс.
     for(bool last=false;!last;){
         loader_shown=std::min(LOADER_FILL,loader_shown+96);last=loader_shown==LOADER_FILL;
         uint32_t bar[LOADER_WORDS];loader_list(loader_shown,bar);put(dl_address,bar,LOADER_WORDS);append_dl(LOADER_WORDS);v=2;put(0x302054,&v,1);
-        do{if(hmm_core->ft_read(0x302054,&v)!=ZM_OK)hmm_fail("Loader DLSWAP read");}while(v);
+        wait_swap_locked();
     }
     hmm_core->delay(150);
     const uint32_t list[]={0x26000007,0};put(dl_address,list,2);append_dl(2);v=2;put(0x302054,&v,1);
-    do{if(hmm_core->ft_read(0x302054,&v)!=ZM_OK)hmm_fail("Loader DLSWAP read");}while(v);
+    wait_swap_locked();
     lastwords=0;video_mode_game();
 }
 // Клод: один проход задачи курсора по последнему опубликованному списку; false — FT не отвечает, задача выходит.
 // Здесь нельзя hmm_fail: исключение вне потока игры завершило бы всё приложение, об ошибке скажет сама игра.
-bool cursor_apply(int x,int y,bool clock){
+HMM_SIZE_RENDER bool cursor_apply(int x,int y,bool clock){
     if(!lastwords||!cursor_count)return true;
     bool differs=false;
     const auto patched=[&](const CursorPatch &p){
@@ -884,7 +886,7 @@ bool cursor_apply(int x,int y,bool clock){
         if(lastdl[p.index]!=value){lastdl[p.index]=value;if(hmm_core->ft_write(dl_address+p.index*4,&value,1)!=ZM_OK)return false;}
     }
     if(!task_append(lastwords))return false;
-    swap=2;if(hmm_core->ft_write(0x302054,&swap,1)!=ZM_OK)return false;
+    swap=2;swap_pending=true;if(hmm_core->ft_write(0x302054,&swap,1)!=ZM_OK)return false;
     ++cursor_swaps;return true;
 }
 void cursor_task(void*){
@@ -905,7 +907,7 @@ void cursor_task(void*){
     }
     cursor_finished=true;
 }
-void cursor_task_stop(){
+HMM_SIZE_RENDER void cursor_task_stop(){
     cursor_run=false;const uint32_t start=hmm_core->millis();
     while(!cursor_finished&&hmm_core->millis()-start<3000)hmm_core->delay(1);
 }
@@ -916,7 +918,9 @@ extern "C" void hmm_gpu_busy_enter(){
     while(cursor_active.load())hmm_core->delay(1);
 }
 extern "C" void hmm_gpu_busy_leave(){gpu_busy.store(gpu_busy.load()-1);}
+extern "C" HMM_SIZE_RENDER void hmm_gpu_wait_swap(){GpuBusy busy;wait_swap_locked();}
 extern "C" HMM_SIZE_RENDER void hmm_gpu_init(){
+    swap_pending=true;
     message_fade_reset();
     
     region_owner=nullptr;region_target=nullptr;region_bump();
@@ -959,25 +963,25 @@ HMM_SIZE_RENDER void clip_begin(){
     if(loader_active)loader_finish();
     
     GpuBusy busy;
-    uint32_t v;do{if(hmm_core->ft_read(0x302054,&v)!=ZM_OK)hmm_fail("Clip DLSWAP read");}while(v);
+    uint32_t v;wait_swap_locked();
     dl[0]=0x26000007;dl[1]=0;words=2;publish_dl();v=2;put(0x302054,&v,1);displayed^=1;
     lastdl[0]=dl[0];lastdl[1]=dl[1];lastwords=2;bitmap_prior_valid=false;cursor_count=0;
-    do{if(hmm_core->ft_read(0x302054,&v)!=ZM_OK)hmm_fail("Clip DLSWAP read");}while(v);
+    wait_swap_locked();
     body_plan_clear();ring_clusters_clear(true);ring_sprite_plan_clear();for(auto &part:map_parts)map_cache_release(part);
     map_cache_release(interface_dl);interface_revision=0;
     for(auto &e:textures.entries)e.pins&=16;
     hft_cache_begin(&textures,displayed);clip_fifo=clip_get(0,CLIP_FIFO+4);
 }
 }
-extern "C" uint32_t hmm_gpu_clip_buffer(unsigned slot,unsigned buffer,unsigned w,unsigned h){
+extern "C" HMM_SIZE_RENDER uint32_t hmm_gpu_clip_buffer(unsigned slot,unsigned buffer,unsigned w,unsigned h){
     if(!clip_fifo)clip_begin();
     return clip_get(1+slot*2+buffer,w*h*2);
 }
-extern "C" void hmm_gpu_clip_decode(uint32_t offset,uint32_t size,uint32_t target){
+extern "C" HMM_SIZE_RENDER void hmm_gpu_clip_decode(uint32_t offset,uint32_t size,uint32_t target){
     if(size>=CLIP_FIFO)hmm_fail("Clip frame exceeds FIFO");
     // Клод: весь кадр без задачи курсора: её CMD_APPEND и DLSWAP не должны вклиниться в декодирование.
     GpuBusy busy;
-    uint32_t v;do{if(hmm_core->ft_read(0x302054,&v)!=ZM_OK)hmm_fail("Clip DLSWAP read");}while(v);
+    uint32_t v;wait_swap_locked();
     const uint32_t fifo[]={0xffffff39u,clip_fifo,CLIP_FIFO};copro_send(fifo,3);copro_wait();
     // Клод: кадр загружается целиком, пока сопроцессор простаивает. Очередь записи Evo в RAM_G держит 8 байт
     // (~2,3 мкс при SPI 28 МГц): под чтением FIFO и записью кадра BL616 она теряла байт (FT_STAT 25, плата 01.11).
@@ -996,7 +1000,7 @@ extern "C" void hmm_gpu_clip_decode(uint32_t offset,uint32_t size,uint32_t targe
         hmm_audio_poll();hmm_core->delay(1);
     }
 }
-void hmm_gpu_clip_show(fheroes2::Image &im,int x,int y,unsigned slot,uint32_t address,unsigned w,unsigned h){
+HMM_SIZE_RENDER void hmm_gpu_clip_show(fheroes2::Image &im,int x,int y,unsigned slot,uint32_t address,unsigned w,unsigned h){
     clip_frames[slot]={address,w,h};hmm_gpu_clip_draw(im,x,y,int(w),int(h),slot);
 }
 extern "C" void hmm_gpu_clip_end(){
@@ -1288,7 +1292,9 @@ rebuild:
     }
     if(reuse_body&&body_dynamic){
         if(dl_overflow||words>2000||texture_missed){actor_retry=true;body_plan_clear();goto rebuild;}
-        if(!ring_hero_changed){const bool saved=motion_candidate;motion_candidate=false;body_plan_store(screen.revision);motion_candidate=saved;}
+        // A held animation pose is still a dynamic subject. Keep its slots
+        // across quiet frames; base/interface revisions already invalidate
+        // geometry and the guards above retain the original overflow retry.
     }
     reset_emitter();
     // Клод: шаг затемнения экрана (fadeDisplay) — чёрный прямоугольник с альфой поверх экрана, под подписью и курсором.
@@ -1420,10 +1426,10 @@ rebuild:
 #endif
     // Клод: публикация и новые якоря курсора — без задачи курсора; её DLSWAP мог ещё не сработать, дожидаемся.
     GpuBusy busy;Prof prof_publish(P_PUBLISH);
-    {uint32_t v;const uint32_t begun=hmm_core->millis();do{if(hmm_core->ft_read(0x302054,&v)!=ZM_OK)hmm_fail("FT DLSWAP read");if(hmm_core->millis()-begun>2000)hmm_fail("FT DLSWAP timeout");}while(v);}
+    wait_swap_locked();
     bool swap=copro_unsettled||lastwords!=words||std::memcmp(dl,lastdl,words*4);
     if(swap){publish_dl();uint32_t v=2;put(0x302054,&v,1);displayed^=1;std::memcpy(lastdl,dl,words*4);lastwords=words;}
-    else for(auto &e:textures.entries)if(e.valid&&(e.pins&(1u<<textures.build_slot)))e.pins|=1u<<displayed;
+    else hft_cache_repeat(&textures,int(displayed));
     if(compacted)for(unsigned h=0;h<32;++h)if(bitmap_seen[h]){for(unsigned f=0;f<5;++f)if(bitmap_seen[h]&(1u<<f))bitmap_prior[h][f]=bitmap_last[h][f];bitmap_known[h]|=bitmap_seen[h];}
     bitmap_prior_valid=compacted;
     cursor_count=cursor_overflow?0:cursor_pending_count;

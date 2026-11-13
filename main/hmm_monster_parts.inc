@@ -76,3 +76,27 @@ Maps::HmmMonsterParts hmmMonsterRecipe(int icn,std::pair<uint32_t,uint32_t> fram
     }
     return result;
 }
+
+// Common poses need one cache transaction for body and shadow. Both owning
+// references are established under that lock before a concurrent trim may run.
+// Cold or partially evicted pairs keep the original allocation-outside-lock path.
+#ifndef HMM2_HOST
+__attribute__((optimize("O2"),noinline))
+#endif
+std::pair<Maps::HmmMonsterParts,Maps::HmmMonsterParts> hmmMonsterRecipePair(std::pair<uint32_t,uint32_t> frames){
+    {
+        HmmMonsterRecipeLock lock;
+        auto find=[&](int icn)->HmmMonsterRecipe*{
+            for(unsigned index=hmm_monster_recipe_heads[hmmMonsterRecipeBucket(icn,frames.first,frames.second)];index;){
+                auto &p=hmm_monster_recipes[index-1];
+                if(p.icn==icn&&p.first==frames.first&&p.second==frames.second)return &p;index=p.next;
+            }
+            return nullptr;
+        };
+        auto *body=find(ICN::MINI_MONSTER_IMAGE),*shadow=find(ICN::MINI_MONSTER_SHADOW);
+        if(body&&shadow){body->stamp=++hmm_monster_recipe_clock;shadow->stamp=++hmm_monster_recipe_clock;hmm_monster_recipe_hits+=2;
+            return {body->parts,shadow->parts};}
+    }
+    auto body=hmmMonsterRecipe(ICN::MINI_MONSTER_IMAGE,frames),shadow=hmmMonsterRecipe(ICN::MINI_MONSTER_SHADOW,frames);
+    return {std::move(body),std::move(shadow)};
+}

@@ -28,9 +28,14 @@ typedef struct {uint64_t key;uint32_t bytes,age;uint16_t page,pages;uint8_t pins
 #define HFT_INDEX (1<<HFT_INDEX_BITS)
 /* Клод: free_low/free_high — свободных страниц ниже HFT_SMALL_TOP и выше; entry_hint — откуда искать свободную запись; clock — откуда
  * искать вытесняемую (ft_sprite.c). */
-typedef struct {hft_entry entries[HFT_ENTRIES];uint8_t pages[HFT_PAGES];uint32_t age;int build_slot;unsigned last_entry,free_low,free_high,entry_hint,clock;uint16_t index[HFT_INDEX];} hft_cache;
+typedef struct {hft_entry entries[HFT_ENTRIES];uint8_t pages[HFT_PAGES];uint32_t age;int build_slot;unsigned last_entry,free_low,free_high,entry_hint,clock;uint16_t index[HFT_INDEX];uint32_t frame_pins[2][HFT_ENTRIES/32];} hft_cache;
+/* Only these two bits represent scanout frames. Persistent owners keep their
+ * existing bits. A stale summary bit is harmless after an explicit unpin. */
+HFT_API void hft_cache_pin(hft_cache*c,unsigned entry,unsigned slot);
 HFT_API void hft_cache_init(hft_cache*c);
 HFT_API void hft_cache_begin(hft_cache*c,int displayed_slot);
+HFT_API void hft_cache_repeat(hft_cache*c,int displayed_slot);
+HFT_API unsigned hft_cache_next_pin(const hft_cache*c,unsigned first,unsigned slot);
 HFT_API int hft_cache_get(hft_cache*c,uint64_t key,uint32_t bytes,uint32_t *address,int *upload);
 /* Клод: без побочных действий: уже в кэше (key, bytes) или есть сплошной свободный участок под bytes — без вытеснения. */
 HFT_API int hft_cache_ready(const hft_cache*c,uint64_t key,uint32_t bytes);

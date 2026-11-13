@@ -23,7 +23,10 @@ def main():
     objects=json.loads((BASE/'xtensa_packed/objects.json').read_text())
     for p in [*map(lambda n:ROOT/'main'/n,['hmm_entry.c','hmm_app.c','hmm_session.c','hmm_io.c','hmm_files.c','hmm_input.c','hmm_libc.c','hmm_heap.c','hmm_video.c','hmm_failure.cpp'])]:
         obj=OUT/(p.stem+'.o');cc=TC/('xtensa-esp32s3-elf-g++.exe' if p.suffix=='.cpp' else 'xtensa-esp32s3-elf-gcc.exe')
-        run([cc,*flags,*['-I'+str(x) for x in inc],'-c',p,'-o',obj],p.stem+'.log');objects.append(str(obj))
+        # Share cold file/transaction helpers with the engine through LTO.
+        # Keep the transport, bootstrap and other C units on their existing flags.
+        extra=['-flto'] if p.name=='hmm_files.c' else []
+        run([cc,*flags,*extra,*['-I'+str(x) for x in inc],'-c',p,'-o',obj],p.stem+'.log');objects.append(str(obj))
     puff=prepare_puff();obj=OUT/'puff.o'
     run([TC/'xtensa-esp32s3-elf-gcc.exe',*flags,'-fno-exceptions','-DHMM_PUFF_TARGET','-c',puff,'-o',obj],'puff.log');objects.append(str(obj))
     script=(ROOT/'bench/runtime.ld').read_text(encoding='utf-8').replace('.data : {','.data : { __hmm_data_begin = .;').replace('  .dynamic :','  . = ALIGN(16);\n  .rodata : { KEEP(*(.hmm_pack)) KEEP(*(.hmm_boot)) }\n  .dynamic :')

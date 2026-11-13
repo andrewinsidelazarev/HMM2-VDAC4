@@ -12,6 +12,7 @@ unsigned hmm_heap_small_pages(void){return 0;}
 const zm_core_t *hmm_core;
 }
 #include <cstdio>
+#include <cerrno>
 #include <string>
 #include <stdexcept>
 #include <filesystem>
@@ -93,7 +94,7 @@ extern "C" int hmm_fs_call(unsigned op,const char *name,const char *other,uint32
     const auto path=std::filesystem::path(folder)/name;std::error_code e;
     if(op==5)return std::filesystem::remove(path,e)&&!e?0:1;
     if(op==4){std::filesystem::rename(path,std::filesystem::path(folder)/other,e);return e?1:0;}
-    auto f=std::fopen(path.string().c_str(),op==2?"wb":op==3?"r+b":"rb");if(!f)return 1;
+    auto f=std::fopen(path.string().c_str(),op==2?"wb":op==3?"r+b":"rb");if(!f)return errno==ENOENT?0x19:1;
     std::fseek(f,0,SEEK_END);if(size)*size=uint32_t(std::ftell(f));std::fseek(f,long(offset),SEEK_SET);int result=0;
     if(op==1&&std::fread(data,1,length,f)!=length)result=1;
     if(op==3&&std::fwrite(data,1,length,f)!=length)result=1;

@@ -115,8 +115,8 @@ HMM_SIZE_RENDER void body_plan_store(unsigned revision){
     try{
         body_plan.commands.assign(dl,dl+words);
         for(auto &w:body_plan.commands)w=body_symbolic_palette(w);
-        for(unsigned i=0;i<HFT_ENTRIES;++i){auto &e=textures.entries[i];
-            if(e.valid&&(e.pins&(1u<<textures.build_slot))&&(e.key>>60)!=2){body_plan.textures.push_back(i);++map_texture_refs[i];e.pins|=4u;}
+        for(unsigned i=0;(i=hft_cache_next_pin(&textures,i,unsigned(textures.build_slot)))<HFT_ENTRIES;++i){auto &e=textures.entries[i];
+            if((e.key>>60)!=2){body_plan.textures.push_back(i);++map_texture_refs[i];e.pins|=4u;}
         }
         body_terminal.reset(new BodyTerminal{});auto &t=*body_terminal;
         std::memcpy(t.state,compact_state,sizeof(t.state));std::memcpy(t.valid,compact_valid,sizeof(t.valid));
@@ -127,7 +127,9 @@ HMM_SIZE_RENDER void body_plan_store(unsigned revision){
             if((body_plan.commands[i]&0xff800000u)==0x2a800000u)body_patches.push_back({uint16_t(i),4});
         }
         for(const auto &p:motion_pending){const unsigned op=dl[p.index]>>24;if(t.last[op]==p.index)t.camera[op]=uint8_t(p.kind);}
-        body_dynamic=!body_actor_spans.empty()&&words<=1800;
+        // Keep 100 words before the existing 2000-word replay guard. A larger
+        // actor pose still retries the ordinary exact builder before publish.
+        body_dynamic=!body_actor_spans.empty()&&words<=1900;
         if(body_dynamic){
             body_spans=body_actor_spans;
             std::sort(body_patches.begin(),body_patches.end(),[](const auto &a,const auto &c){return a.index<c.index;});

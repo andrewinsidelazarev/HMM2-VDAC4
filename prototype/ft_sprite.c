@@ -1,6 +1,9 @@
 /* Codex: только штатные команды FT812; ближайший тексель и отражение с поправкой минус 1/256. */
 #include "ft_sprite.h"
 #include <string.h>
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
 uint32_t hft_emit(uint32_t *out,uint32_t capacity,const hft_sprite*s){
     if(capacity<10||s->sw<=0||s->sh<=0||s->w<=0||s->h<=0||s->sw>2047||s->sh>2047||s->w>2047||s->h>2047)return 0;
     out[0]=0x01000000u|(s->source&0x3fffffu);
@@ -44,10 +47,38 @@ int hft_precompose(uint8_t *history,int width,int height,const hft_sprite*s,
     return transformed;
 }
 void hft_cache_init(hft_cache*c){memset(c,0,sizeof(*c));c->free_low=HFT_SMALL_TOP;c->free_high=HFT_PAGES-HFT_SMALL_TOP;}
+#ifdef __GNUC__
+__attribute__((noinline))
+#endif
+void hft_cache_pin(hft_cache*c,unsigned entry,unsigned slot){
+    if(c->entries[entry].pins&(1u<<slot))return;
+    c->entries[entry].pins|=(uint8_t)(1u<<slot);c->frame_pins[slot][entry>>5]|=1u<<(entry&31);
+}
+static unsigned first_bit(uint32_t bits){
+#ifdef _MSC_VER
+    unsigned long at;_BitScanForward(&at,bits);return (unsigned)at;
+#else
+    return (unsigned)__builtin_ctz(bits);
+#endif
+}
+unsigned hft_cache_next_pin(const hft_cache*c,unsigned first,unsigned slot){
+    for(unsigned word=first>>5;word<HFT_ENTRIES/32;++word){uint32_t bits=c->frame_pins[slot][word];
+        if(word==(first>>5))bits&=~0u<<(first&31);
+        while(bits){const unsigned bit=first_bit(bits),i=word*32+bit;bits&=bits-1;
+            if(c->entries[i].valid&&(c->entries[i].pins&(1u<<slot)))return i;}
+    }
+    return HFT_ENTRIES;
+}
 void hft_cache_begin(hft_cache*c,int displayed_slot){
     /* Codex: вызывающий подтверждает DLSWAP=0. Показанный слот остаётся закреплённым. */
     c->build_slot=displayed_slot^1;
-    for(unsigned i=0;i<HFT_ENTRIES;i++)c->entries[i].pins&=(uint8_t)~(1u<<c->build_slot);
+    const unsigned slot=(unsigned)c->build_slot;
+    for(unsigned i=0;(i=hft_cache_next_pin(c,i,slot))<HFT_ENTRIES;++i)c->entries[i].pins&=(uint8_t)~(1u<<slot);
+    memset(c->frame_pins[slot],0,sizeof(c->frame_pins[slot]));
+}
+void hft_cache_repeat(hft_cache*c,int displayed_slot){
+    const unsigned slot=(unsigned)c->build_slot;
+    for(unsigned i=0;(i=hft_cache_next_pin(c,i,slot))<HFT_ENTRIES;++i)hft_cache_pin(c,i,(unsigned)displayed_slot);
 }
 /* Клод: хеш-индекс записей; удаление — со сдвигом цепочки назад, без «надгробий». */
 static unsigned slot_of(uint64_t key){return (unsigned)(((uint32_t)(key^(key>>32))*2654435761u)>>(32-HFT_INDEX_BITS))&(HFT_INDEX-1);}
@@ -70,7 +101,7 @@ static void pages_set(hft_cache*c,unsigned at,unsigned n,int used){
 static void erase(hft_cache*c,unsigned i){hft_entry*e=c->entries+i;index_remove(c,i);pages_set(c,e->page,e->pages,0);e->valid=0;c->entry_hint=i;}
 static void place(hft_cache*c,unsigned i,uint64_t key,uint32_t bytes,unsigned at,unsigned need){
     pages_set(c,at,need,1);hft_entry*e=c->entries+i;
-    e->key=key;e->bytes=bytes;e->age=++c->age;e->page=(uint16_t)at;e->pages=(uint16_t)need;e->pins=(uint8_t)(1u<<c->build_slot);e->valid=1;
+    e->key=key;e->bytes=bytes;e->age=++c->age;e->page=(uint16_t)at;e->pages=(uint16_t)need;e->pins=0;hft_cache_pin(c,i,(unsigned)c->build_slot);e->valid=1;
     index_add(c,i);c->last_entry=i;c->entry_hint=(i+1)&(HFT_ENTRIES-1);
 }
 int hft_cache_ready(const hft_cache*c,uint64_t key,uint32_t bytes){
@@ -82,7 +113,7 @@ int hft_cache_ready(const hft_cache*c,uint64_t key,uint32_t bytes){
 }
 int hft_cache_get(hft_cache*c,uint64_t key,uint32_t bytes,uint32_t *address,int *upload){
     if(!bytes||bytes>HFT_PAGES*HFT_PAGE_BYTES)return 0;
-    for(unsigned h=slot_of(key);c->index[h];h=(h+1)&(HFT_INDEX-1)){hft_entry*e=c->entries+c->index[h]-1;if(e->key==key&&e->bytes==bytes){c->last_entry=c->index[h]-1;e->pins|=1u<<c->build_slot;e->age=++c->age;*address=e->page*HFT_PAGE_BYTES;*upload=0;return 1;}}
+    for(unsigned h=slot_of(key);c->index[h];h=(h+1)&(HFT_INDEX-1)){hft_entry*e=c->entries+c->index[h]-1;if(e->key==key&&e->bytes==bytes){c->last_entry=c->index[h]-1;hft_cache_pin(c,c->last_entry,(unsigned)c->build_slot);e->age=++c->age;*address=e->page*HFT_PAGE_BYTES;*upload=0;return 1;}}
     unsigned need=(bytes+HFT_PAGE_BYTES-1)/HFT_PAGE_BYTES;
     /* Клод: большие текстуры (от 64 КиБ: фоны и окна 640×480) ищут место сверху вниз, мелкие — снизу вверх и сначала только в нижних
      * HFT_SMALL_TOP страницах, вытесняя старые незакреплённые оттуда же; выше идут, лишь когда внизу не освободить. Кэш жадный:

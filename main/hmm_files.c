@@ -159,36 +159,16 @@ static int save_name(const char *path,char name[13]){
 }
 /* Codex: FILEX принимает 8.3; имена диалога оригинала сохраняются в маленьком индексе.
  * Игра видит files/save, физические H2Sxxxxx.SAV лежат рядом с HMM2.DAT на SD Evo. */
-static char saves[64][128];static int saves_ready;
-static int save_index(void){
-    if(saves_ready)return saves_ready>0;
-    uint32_t size=0;if(hmm_fs_call(0,"HMM2.IDX",0,0,0,0,&size)){saves_ready=1;return 1;}
-    if(size!=sizeof(saves)){saves_ready=-1;return 0;}
-    for(unsigned at=0;at<sizeof(saves);){unsigned n=sizeof(saves)-at;if(n>DISK_CHUNK)n=DISK_CHUNK;
-        if(hmm_fs_call(1,"HMM2.IDX",0,at,(char*)saves+at,n,0)){saves_ready=-1;return 0;}at+=n;}
-    for(unsigned i=0;i<64;i++)if(!memchr(saves[i],0,128)||strchr(saves[i],'/')||strchr(saves[i],'\\')){saves_ready=-1;return 0;}
-    saves_ready=1;return 1;
-}
-static int write_index(void){
-    if(hmm_fs_call(2,"HMM2.IDX",0,0,0,0,0))return 0;
-    for(unsigned at=0;at<sizeof(saves);){unsigned n=sizeof(saves)-at;if(n>DISK_CHUNK)n=DISK_CHUNK;
-        if(hmm_fs_call(3,"HMM2.IDX",0,at,(char*)saves+at,n,0)){hmm_fs_call(6,"HMM2.IDX",0,0,0,0,0);return 0;}at+=n;}return !hmm_fs_call(6,"HMM2.IDX",0,0,0,0,0);
-}
-static int disk_name(const char *path,char name[13],int create){
-    char normalized[128];normalize(path,normalized);
-    if(strncmp(normalized,"files/save/",11))return save_name(path,name);
-    if(strlen(path)>=128||!normalized[11]||strchr(normalized+11,'/')||!save_index())return 0;
-    unsigned i;for(i=0;i<64;i++){char lower[128];normalize(saves[i],lower);if(!strcmp(lower,normalized+11))break;}
-    if(i==64){if(!create)return 0;for(i=0;i<64&&saves[i][0];i++);if(i==64)return 0;
-        const char*p=strrchr(path,'/');strcpy(saves[i],p?p+1:normalized+11);
-        if(!write_index()){saves[i][0]=0;return 0;}}
-    snprintf(name,13,"H2S%05u.SAV",i);return 1;
-}
+#include "hmm_save_store.inc"
 hmm_file *hmm_fopen(const char *path,const char *mode){
     struct entry *e=find(path);int write=strchr(mode,'w')!=0||strchr(mode,'a')!=0||strchr(mode,'+')!=0;
     if(e&&write)return 0;
     hmm_file *f=calloc(1,sizeof(*f));if(!f)return 0;
     if(e){f->base=e->offset;f->size=e->size;f->packed=1;f->prefix=e->prefix;return f;}
+    char normalized[128];normalize(path,normalized);
+    if(write&&!strncmp(normalized,"files/save/",11)){
+        if(!strchr(mode,'w')||!save_begin(path,f)){free(f);return 0;}return f;
+    }
     if(!disk_name(path,f->name,write)){free(f);return 0;}
     uint32_t size=0;unsigned op=strchr(mode,'w')?2:0;
     if(hmm_fs_call(op,f->name,0,0,0,0,&size)){free(f);return 0;}
@@ -205,6 +185,7 @@ static int disk_buffer(hmm_file *f){if(!f->buf)f->buf=malloc(f->packed?960:DISK_
 int hmm_fclose(hmm_file *f){int ok=disk_flush(f)&&!f->failed;
     /* Codex: SYNC нужен и после отказа flush; ошибку закрытия возвращаем вызывающему. */
     if(!f->packed&&hmm_fs_call(6,f->name,0,0,0,0,0))ok=0;
+    if(save_pending.file==f){save_pending.file=0;save_pending.ready=ok;}
     free(f->buf);free(f);return ok?0:-1;}
 uint32_t hmm_file_offset(hmm_file *f){if(!f||!f->packed)hmm_fail("Graphics must be in HMM2.DAT");return f->base;}
 size_t hmm_fread(void *dst,size_t size,size_t count,hmm_file *f){
@@ -267,10 +248,13 @@ int hmm_is_dir(const char *path){
 }
 int hmm_mkdir(const char *path){return hmm_is_dir(path);}
 int hmm_unlink(const char *path){
-    char name[13];if(find(path)||!disk_name(path,name,0)||hmm_fs_call(5,name,0,0,0,0,0))return 0;
+    char name[13];if(find(path)||!disk_name(path,name,0))return 0;
+    const int status=hmm_fs_call(5,name,0,0,0,0,0);
+    if(status&&status!=SAVE_NOT_FOUND)return 0;
     char normalized[128];normalize(path,normalized);if(!strncmp(normalized,"files/save/",11)){
-        for(unsigned i=0;i<64;i++){char lower[128];normalize(saves[i],lower);if(!strcmp(lower,normalized+11)){saves[i][0]=0;return write_index();}}}
-    return 1;
+        for(unsigned i=0;i<64;i++){char lower[128];normalize(saves[i],lower);if(!strcmp(lower,normalized+11)){
+            saves[i][0]=0;return write_index();}}}
+    return !status;
 }
 void hmm_list_dir(const char *path,hmm_dir_callback callback,void*user){
     if(!catalogue())return;char name[128];normalize(path,name);size_t len=strlen(name);
@@ -279,5 +263,5 @@ void hmm_list_dir(const char *path,hmm_dir_callback callback,void*user){
         if(*p&&!strchr(p,'/'))callback(p,user);
     }
     if(!strcmp(name,"files/save")&&save_index())for(unsigned i=0;i<64;i++)if(saves[i][0]){
-        char disk[13];snprintf(disk,13,"H2S%05u.SAV",i);if(!hmm_fs_call(0,disk,0,0,0,0,0))callback(saves[i],user);}
+        char disk[13];if(save_recover(i,disk)&&!disk_stat(disk,0))callback(saves[i],user);}
 }

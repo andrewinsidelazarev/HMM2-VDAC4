@@ -56,7 +56,10 @@ if (Test-Path -LiteralPath "$out\sdkconfig.quad") {
 Push-Location -LiteralPath $out
 try {
     $ErrorActionPreference='Continue'
-    if ($DirectBuild) {
+    if ($DirectBuild -and (Test-Path -LiteralPath "$out/build/build.ninja")) {
+        & 'E:/zx/esp/.espressif/tools/ninja/1.12.1/ninja.exe' -C "$out/build" -j 6 *> "$out/build.log"
+        $result=$LASTEXITCODE
+    } elseif ($DirectBuild) {
         # Codex: прямые CMake/MinGW Make обходятся без именованных каналов asyncio IDF и Ninja.
         $env:PATH=($env:PATH.Split(';') | Where-Object { $_ -notmatch 'Git[/\\]usr[/\\]bin' }) -join ';'
         $make='E:/zx/bl616/bouffalo_sdk/tools/make/mingw32-make.exe'
