@@ -588,8 +588,12 @@ FtPresent:
         ld hl,2
         jp FtWrReg
 FtHead:
-        dd #020A1020,#26000007,#04FFFFFF,#27000004
-        dd #07080208,#08002010,#15000080,#19000080,#1F000001
+        ; A preceding JPEG uses BITMAP_LAYOUT_H/SIZE_H for 1024x768.
+        ; Bitmap descriptors survive display-list swaps: initialise both halves.
+        dd #020A1020,#26000007,#04FFFFFF,#100000FF,#0B000014,#27000004
+        dd #05000000,#06000000,#01000000,#07080208,#28000000,#08002010,#29000000
+        dd #15000080,#16000000,#17000000,#18000000,#19000080,#1A000000
+        dd #1B000000,#1C400300,#2B000000,#2C000000,#1F000001
 FtHeadEnd:
 FtSplashDl:
         dd #02000000,#26000007,#27000004,#04FFFFFF,#100000FF

@@ -24,11 +24,12 @@ def main():
     sources=[p for p in sources if p.name not in omit and 'editor' not in p.parts]
     # Codex: CPU-эталону нужны исходный декодер роликов и libsmacker; GPU-вариант использует hmm_clip.
     if args.host and not args.packed:sources += [src/'engine/smk_decoder.cpp',src/'thirdparty/libsmacker/smacker.c']
+    if args.host and not args.packed:sources += [ROOT/'tests/locale_cpu_stubs.cpp',ROOT/'tests/hmm_map_export.cpp']
     sources += [ROOT/'main'/s for s in ['hmm_system.cpp','hmm_muted.cpp','hmm_audio.cpp','hmm_clock.cpp','hmm_logging.cpp']]
     if args.host:sources += [ROOT/'tests/stage1_host.cpp',ROOT/'tests/stage1_pack.cpp',ROOT/'tests/stage1_scene.cpp',ROOT/'tests/stage1_audio_decoder.c',ROOT/'tests/stage1_audio_test.cpp']
-    if args.packed:sources += [ROOT/'main/hmm_resources.cpp',ROOT/'main/hmm_gpu.cpp',ROOT/'main/hmm_loading.cpp',ROOT/'main/hmm_clip.cpp',ROOT/'prototype/ft_sprite.c']
+    if args.packed:sources += [ROOT/'main/hmm_resources.cpp',ROOT/'main/hmm_gpu.cpp',ROOT/'main/hmm_loading.cpp',ROOT/'main/hmm_clip.cpp',ROOT/'main/hmm_locale.cpp',ROOT/'main/hmm_subtitles.cpp',ROOT/'prototype/ft_sprite.c']
     if args.host:sources += [ROOT/'main/hmm_files.c',ROOT/'tests/stage1_files.cpp']
-    inc=[ROOT/'main',ROOT/'prototype',ROOT/'tools/probe_include',src/'engine',src/'thirdparty/libsmacker',FW.parent/'Sound/components/stb_vorbis',SDK,SDK/'SDL2',FW/'modules/sdk/include']
+    inc=[ROOT/'main',ROOT/'tests',ROOT/'prototype',ROOT/'tools/probe_include',src/'engine',src/'thirdparty/libsmacker',FW.parent/'Sound/components/stb_vorbis',SDK,SDK/'SDL2',FW/'modules/sdk/include']
     inc+=sorted(p for p in (src/'fheroes2').iterdir() if p.is_dir())
     # Клод: prototype/*.h (ft_sprite.h) тоже входит в подпись: без него hmm_gpu.cpp оставался
     # собранным со старым размером hft_cache, и новый индекс кэша писал за пределы структуры.

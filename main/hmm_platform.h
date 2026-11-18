@@ -25,10 +25,11 @@ void hmm_gpu_busy_enter(void);
 void hmm_gpu_busy_leave(void);
 /* Клод: мелкое чтение из HMM2.DAT через кэш окон (hmm_files.c): каждый кусок идёт с карты один раз. */
 size_t hmm_package_read(uint32_t offset,void *dst,size_t count);
+size_t hmm_file_cached_read(hmm_file *file,uint32_t offset,void *dst,size_t count);
 void hmm_input_init(void);
 uint32_t hmm_input_polled(void);
 void hmm_loading_mouse(int *x,int *y);
-int hmm_mouse_next(int *dx,int *dy,int *buttons,int *x,int *y,uint32_t *when);
+int hmm_mouse_next(int *dx,int *dy,int *wheel,int *buttons,int *x,int *y,uint32_t *when);
 void hmm_mouse_position(int *x,int *y);
 void hmm_input_frame(void);
 void hmm_input_stats(uint32_t *out,int reset);

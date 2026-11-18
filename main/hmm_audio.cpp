@@ -52,6 +52,7 @@ uint32_t mixed_frames,music_until,fade_progress;std::atomic<uint32_t> written_fr
 Music::PlaybackMode current_mode=Music::PlaybackMode::PLAY_ONCE;
 // Клод: дорожка ролика; пока она звучит, здесь сохранена громкость музыки, иначе -1.
 constexpr uint32_t clip_track=63;int clip_music_volume=-1;
+std::atomic<uint32_t> clip_first_frame{UINT32_MAX};
 void clip_finish(){if(clip_music_volume>=0){music_volume=clip_music_volume;clip_music_volume=-1;}}
 #ifdef HMM2_HOST
 SDL_AudioDeviceID device;uint64_t test_epoch;FILE *capture;
@@ -402,6 +403,8 @@ void render_block(){
         // Клод: деление на каждый отсчёт — только пока идёт нарастание; после него множитель один на блок.
         if(fade_ms<=0||fade_progress*uint64_t(1000)>=uint64_t(rate)*fade_ms){for(unsigned i=0;i<got*2;i++)pcm[filled*2+i]*=volume;}
         else for(unsigned i=0;i<got;i++){float fade=std::min(1.0f,(fade_progress+i)*1000.0f/(rate*float(fade_ms)));pcm[(filled+i)*2]*=volume*fade;pcm[(filled+i)*2+1]*=volume*fade;}
+        if(got&&uint32_t(current_uid)==clip_track&&clip_first_frame.load()==UINT32_MAX)
+            clip_first_frame.store(mixed_frames+filled);
         music_frames+=got;filled+=got;if(fade_progress<rate*60u)fade_progress+=got;
         if(result==ZM_RENDER_END){if(current_mode==Music::PlaybackMode::PLAY_ONCE){music_until=mixed_frames+filled;close_song();}else if(!restart_pass())open_stream(tracks[uint32_t(current_uid)],0);}
         else if(result==ZM_RENDER_ERROR){log_audio("AUDIO OGG decode error");close_song();}
@@ -410,6 +413,10 @@ void render_block(){
     }
     // Codex: отсчёты эффектов исходные unsigned PCM 8 бит, 22050 Гц, как LoadWAV OpenHMM2.
     for(unsigned c=0;c<channel_count;c++){auto &e=effects[c];if(e.active)mix_effect(e,frames);}
+    // No decoded speech (missing/failed OGG): advance on the silent PCM clock.
+    // A pending open is serviced before render_block under AudioLock.
+    if(uint32_t(current_uid)==clip_track&&!playing&&clip_first_frame.load()==UINT32_MAX)
+        clip_first_frame.store(mixed_frames);
     for(float &v:pcm)v=std::clamp(v,-1.0f,1.0f);output_block(frames);
 }
 #ifdef HMM2_HOST
@@ -451,6 +458,11 @@ extern "C" int hmm_audio_self(){
 #else
     uintptr_t id;__asm__ volatile("rur.threadptr %0":"=a"(id));return id==audio_task_id;
 #endif
+}
+extern "C" unsigned hmm_audio_clip_elapsed(){
+    const uint32_t first=clip_first_frame.load();if(first==UINT32_MAX)return 0;
+    const int32_t played=int32_t(audible_frames()-first);
+    return played>0?unsigned(uint64_t(uint32_t(played))*1000/rate):0;
 }
 extern "C" void hmm_audio_tick(){
     if(!valid||servicing||hmm_audio_busy())return;
@@ -556,7 +568,7 @@ bool isPlaying(int c){return c>=0&&unsigned(c)<channel_count&&effect_playing(eff
 namespace Music {
 bool Play(uint64_t uid,PlaybackMode mode){const uint32_t id=uint32_t(uid);if(id>=64||tracks[id].path.empty())return false;
     AudioServiceScope service;
-    Stop();AudioLock lock;if(id!=clip_track)clip_finish();current_uid=uid;current_mode=mode;music_until=0;fade_progress=0;
+    Stop();AudioLock lock;clip_first_frame.store(UINT32_MAX);if(id!=clip_track)clip_finish();current_uid=uid;current_mode=mode;music_until=0;fade_progress=0;
     const uint32_t resume=mode==PlaybackMode::RESUME_AND_PLAY_INFINITE?tracks[id].position:0;
 #ifdef HMM2_HOST
     open_track(tracks[id],resume);

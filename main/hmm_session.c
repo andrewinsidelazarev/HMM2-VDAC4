@@ -34,9 +34,11 @@ void hmm_session_task(void *arg){
 void hmm_session_stop(void){
     hmm_session_request_stop();
     uint32_t start=hmm_core->millis();
-    /* Codex: core_back ждёт до 10 с, каждый из вызовов LINK — до 5 с на мьютексе прошивки.
-     * Запас относится только к APP_STOP, не является признаком пропажи Z80. */
+    /* stop() runs on the firmware LINK loop. Keep that loop responsive: the
+     * host owns application tasks and forcibly removes any unfinished task
+     * after this callback returns. Session cleanup is cooperative, not required
+     * to wait for an unresponsive transport during Tang reconfiguration. */
     while(!__atomic_load_n(&hmm_done,__ATOMIC_ACQUIRE) &&
-          (uint32_t)(hmm_core->millis()-start)<60000)hmm_core->delay(1);
+          (uint32_t)(hmm_core->millis()-start)<500)hmm_core->delay(1);
     if(!hmm_done)hmm_core->log("HMM2: stop: worker did not finish; firmware will stop the task");
 }

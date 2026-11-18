@@ -294,7 +294,7 @@ FastMusicSelect:
         djnz .bit
         ret
 
-; Codex: не более одного блока SD за проход. Новый запрос ESP имеет приоритет перед следующим.
+; Не более одной строки 4 КиБ за проход. Ввод и новые запросы ESP проверяются между строками.
 FastMusicIdle:
         ld a,(MusicActive)
         or a
@@ -335,9 +335,11 @@ FastMusicIdle:
         ld (FastSector),hl
         ld hl,(MusicCursor+2)
         ld (FastSector+2),hl
-        ; Клод: блок музыки читается в слот целиком, как чтение вперёд.
-        ld hl,#FFFF
+        ; Музыкальный курсор всегда указывает на начало строки.
+        ld hl,#0100 ; Select a single 4 KiB cache line.
         ld (FastRemaining),hl
+        xor a
+        ld (FastSeqAhead),a
         ld a,(WC_PAGE3)
         push af
         call FastBuffer
@@ -348,7 +350,7 @@ FastMusicIdle:
         pop af
         jr nz,.error
         ld hl,(MusicCursor)
-        ld de,32
+        ld de,8
         add hl,de
         ld (MusicCursor),hl
         jr nc,.done

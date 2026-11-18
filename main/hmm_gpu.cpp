@@ -4,6 +4,7 @@
 #include "hmm_platform.h"
 extern "C" {extern size_t hmm_heap_mid_bytes,hmm_heap_mid_peak;}
 #include "hmm_resources.h"
+#include "hmm_locale.h"
 #include <atomic>
 #include "image.h"
 #include "screen.h"
@@ -82,7 +83,14 @@ int body_actor_handle=-1;
 uint32_t body_actor_touched;
 bool body_dynamic,body_actor_collect;
 unsigned body_base_revision,body_dynamic_hits;
-struct MapCluster {int x=0,y=0;bool skeleton=false;std::array<uint64_t,64> keys{};MapPart part;std::vector<Draw> fills;std::vector<HeroSlot> heroes;};
+struct MapCluster {
+    int x=0,y=0;
+    bool skeleton=false;
+    uint64_t revision=0, visible=0, background_cached=0;
+    MapPart part;
+    std::vector<Draw> fills;
+    std::vector<HeroSlot> heroes;
+};
 std::array<std::unique_ptr<MapCluster>,16> map_clusters;
 bool cluster_compiling,cluster_failed,cluster_used,cluster_retry,cluster_seeded;
 bool skeleton_retry,skeleton_used,hero_slot_emitting;
@@ -259,8 +267,8 @@ HMM_RENDER_NOINLINE bool copro_try_send(const uint32_t *commands,unsigned count)
     if(hmm_core->ft_write(0x3020fc,&next,1)!=ZM_OK)return false;
     command_position=next;copro_unsettled=false;return true;
 }
-void copro_wait();
-void copro_send(const uint32_t *commands,unsigned count){
+HMM_SIZE_RENDER void copro_wait(unsigned bytes=0);
+HMM_SIZE_RENDER void copro_send(const uint32_t *commands,unsigned count,bool reserve=false){
     if(copro_unsettled){
         // A failed register write may already have reached the FPGA. Recover
         // its committed pointer and drain that packet before reusing RAM_CMD.
@@ -270,13 +278,15 @@ void copro_send(const uint32_t *commands,unsigned count){
         command_position=written;copro_wait();copro_unsettled=false;
         hmm_core->log("HMM2: CMD cursor packet recovered at %lu",(unsigned long)written);
     }
+    if(reserve)copro_wait(count*4);
     const uint32_t start=hmm_core->millis();
     if(!copro_try_send(commands,count))hmm_fail("FT CMD write failed");
     traffic+=(count+1)*4;link_ms+=hmm_core->millis()-start;
 }
-void copro_wait(){
+void copro_wait(unsigned bytes){
     uint32_t read,start=hmm_core->millis();
     for(;;){
+        if(!hmm_running)hmm_fail("Application stopped");
         if(hmm_core->ft_read(0x3020f8,&read)!=ZM_OK)hmm_fail("FT CMD READ LINK failed");
         if(read==4095){
             uint32_t written=~0u,length=~0u,mark=~0u;
@@ -284,7 +294,7 @@ void copro_wait(){
             hmm_core->log("HMM2 CMD fault: wr=%lu local=%lu dl=%lu ring0=%08lx",(unsigned long)written,(unsigned long)command_position,(unsigned long)length,(unsigned long)mark);
             hmm_fail("FT CMD fault");
         }
-        if(read==command_position)break;
+        if(bytes?4092u-((command_position-read)&4095u)>=bytes:read==command_position)break;
         if(hmm_core->millis()-start>2000)hmm_fail("FT CMD timeout");
         hmm_core->delay(1);
     }
@@ -436,7 +446,7 @@ void texture_tick(){hmm_audio_poll();hmm_loading_tick();}
 void render_audio_tick(){}
 void texture_tick(){}
 #endif
-Texture texture(const Draw &d){
+Texture texture(const Draw &d, const HmmFtImage *ft = nullptr){
     texture_tick();
     Texture t{};int upload;
     if(d.bitmap){
@@ -457,7 +467,7 @@ Texture texture(const Draw &d){
             bitmap_release_pixels(*d.bitmap);
         }
     }else{
-        const auto &r=hmm_resource_ft(d.resource,d.raw);
+        const auto &r=ft?*ft:hmm_resource_ft(d.resource,d.raw);
         if(!hft_cache_get(&textures,UINT64_C(0x1000000000000000)|r.offset,r.bytes,&t.address,&upload))return texture_missing(r.bytes,"atlas");
         if(upload){hmm_remote_graphics(r.offset,t.address,r.bytes);gpu_upload_bytes+=r.bytes;}
         t.stride=r.stride;t.height=r.height;t.cell=r.cell;
@@ -505,7 +515,7 @@ void emit_clip(const Draw &d){
     set(0x2b000000|(uint32_t((d.r.x-(d.r.x&511))*16)&0x1ffff));set(0x2c000000|(uint32_t((d.r.y-(d.r.y&511))*16)&0x1ffff));
     word(0x80000000|(uint32_t(d.r.x&511)<<21)|(uint32_t(d.r.y&511)<<12)|(handle<<7));
 }
-void emit_textured(const Draw &d,const Texture &t,bool whole_allowed){
+void emit_textured(const Draw &d,const Texture &t,bool whole_frame){
     /* Клод: кусок спрайта (сдвиг sx/sy без отражения) — адрес текстуры сдвигается на его первую точку (BITMAP_SOURCE, для PALETTED8
      * без выравнивания; RTL Tang берёт все 22 бита), ячейка CELL уходит в тот же адрес, а TRANSFORM_C/F остаются нулевыми. Прежде
      * каждый кусок монстра или тени менял TRANSFORM_C и TRANSFORM_F (на Alteris 427 слов из 2672 в списке кадра). */
@@ -534,14 +544,8 @@ void emit_textured(const Draw &d,const Texture &t,bool whole_allowed){
     if(body_actor_handle>=0)body_actor_touched|=uint32_t(1)<<handle;
     const int x=physical(d.r.x),y=physical(d.r.y);
     int w=physical(d.r.x+d.r.w)-x,h=physical(d.r.y+d.r.h)-y;
-    if(whole_allowed&&!d.bitmap&&!d.repeat){
-        const auto &im=hmm_resource_get(d.resource);
-        // Codex: полный кадр CELL использует один размер ручки. Прозрачное дополнение
-        // и BORDER закрывают остаток 5/8 без шва; обрезанные прямоугольники не расширяем.
-        if(d.step==1&&d.sx==0&&d.sy==0&&d.r.w==im.width()&&d.r.h==im.height()){
-            w=t.stride;h=t.height;
-        }
-    }
+    // CELL may use the padded atlas dimensions for an entire, uncropped sprite.
+    if(whole_frame){w=t.stride;h=t.height;}
     auto &entry=handles[handle];uint32_t size=0x08000000|(d.repeat?0xc0000:0)|((w&511)<<9)|(h&511),high=0x29000000|((w>>9)<<2)|(h>>9);
     if(entry.size!=size||entry.high!=high)set(0x05000000|handle);
     if(entry.size!=size){word(size);entry.size=size;}if(entry.high!=high){word(high);entry.high=high;}
@@ -597,11 +601,17 @@ void emit(const Draw &d){
     }
     // Клод: большой ресурс — полосами (texture_strip): сплошной кусок RAM_G под него не нужен.
     // Целиком, если он уже в RAM_G или есть сплошное место без вытеснения: полосы удлиняют DL (рамка карты 640×480 — +360 слов).
-    if(!d.bitmap&&!d.repeat){const auto &r=hmm_resource_ft(d.resource,d.raw);
-        if(r.bytes>=STRIP_MIN_BYTES&&r.stride!=32&&!hft_cache_ready(&textures,UINT64_C(0x1000000000000000)|r.offset,r.bytes)){emit_strips(d,r);return;}}
-    const auto t=texture(d);
+    const HmmFtImage *ft = nullptr;
+    bool whole_frame = false;
+    if(!d.bitmap&&!d.repeat){
+        int width, height;
+        ft = &hmm_resource_ft(d.resource, d.raw, width, height);
+        if(ft->bytes>=STRIP_MIN_BYTES&&ft->stride!=32&&!hft_cache_ready(&textures,UINT64_C(0x1000000000000000)|ft->offset,ft->bytes)){emit_strips(d,*ft);return;}
+        whole_frame = d.step == 1 && !d.sx && !d.sy && d.r.w == width && d.r.h == height;
+    }
+    const auto t=texture(d,ft);
     if(t.missing)return;
-    emit_textured(d,t,true);
+    emit_textured(d,t,whole_frame);
 }
 template<class Iterator> void emit_sequence(Iterator source,size_t count){for(size_t i=0;i<count;++i)emit(source[i]);}
 #ifndef HMM2_HOST
@@ -972,6 +982,13 @@ HMM_SIZE_RENDER void clip_begin(){
     for(auto &e:textures.entries)e.pins&=16;
     hft_cache_begin(&textures,displayed);clip_fifo=clip_get(0,CLIP_FIFO+4);
 }
+}
+// Caller owns the GPU writer guard. Shared FIFO accounting/recovery must also
+// cover streamed RUS data; no separate REG_CMD_WRITE pointer is introduced.
+extern "C" HMM_SIZE_RENDER void hmm_gpu_upload_commands(const uint32_t *data,unsigned count){
+    // Keep the same writer guard and FIFO pointer. Drain once at atlas end;
+    // intermediate packets only need enough room, leaving four bytes unused.
+    if(count)copro_send(data,count,true);else copro_wait();
 }
 extern "C" HMM_SIZE_RENDER uint32_t hmm_gpu_clip_buffer(unsigned slot,unsigned buffer,unsigned w,unsigned h){
     if(!clip_fifo)clip_begin();

@@ -333,10 +333,12 @@ FastIdle:
         ld de,8
         add hl,de
         ld (FastAheadBase),hl
-        ret nc
+        jr nc,.prefetched
         ld hl,(FastAheadBase+2)
         inc hl
         ld (FastAheadBase+2),hl
+.prefetched:
+        scf
         ret
 .stop:
         xor a

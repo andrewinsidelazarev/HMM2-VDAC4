@@ -15,7 +15,7 @@ def run(cmd,name):
 def main():
     global OUT
     # Codex: отдельный результат линковки не меняет ELF выполняемого стенда.
-    parser=argparse.ArgumentParser();parser.add_argument('--out',type=Path,default=OUT);parser.add_argument('--lto-partitions',type=int,default=6);parser.add_argument('--compact-branches',action='store_true')
+    parser=argparse.ArgumentParser();parser.add_argument('--out',type=Path,default=OUT);parser.add_argument('--lto-partitions',type=int,default=6);parser.add_argument('--lto-jobs',type=int,default=6);parser.add_argument('--compact-branches',action='store_true')
     options=parser.parse_args();OUT=options.out.resolve()
     OUT.mkdir(parents=True,exist_ok=True)
     flags=['-Oz','-fPIC','-fvisibility=hidden','-mlongcalls','-ffunction-sections','-fdata-sections','-fexceptions','-fno-builtin','-fstack-usage','-Wstack-usage=2048']
@@ -34,7 +34,7 @@ def main():
     # Codex: core вызывает только числовую точку входа; внутренние SDL/C++ символы не экспортируются.
     exports=OUT/'exports.map';exports.write_text('{ local: *; };\n',encoding='ascii')
     # Клод: шесть разделов LTO, как у выданной сборки 59: с восемью ELF на 5 КиБ больше и не входит в лимит.
-    args=['-nostdlib','-nostartfiles','-shared','-fPIC','-Oz','-flto=6','--param=lto-partitions='+str(options.lto_partitions),'-fstack-usage','-Wstack-usage=2048','-save-temps','-Wl,--gc-sections','-Wl,-Bsymbolic','-Wl,--exclude-libs,ALL','-Wl,--version-script='+str(exports),'-Wl,-e,main','-T',str(OUT/'runtime.ld'),*objects,'-Wl,--start-group',str(RT/'libstdcpp_pic.a'),str(RT/'libunwind_pic.a'),str(BASE/'runtime/libhmm_pic.a'),'-Wl,--end-group','-o',str(OUT/'HMM2.raw.ELF'),'-Wl,-Map,'+str(OUT/'HMM2.map')]
+    args=['-nostdlib','-nostartfiles','-shared','-fPIC','-Oz','-flto='+str(options.lto_jobs),'--param=lto-partitions='+str(options.lto_partitions),'-fstack-usage','-Wstack-usage=2048','-save-temps','-Wl,--gc-sections','-Wl,-Bsymbolic','-Wl,--exclude-libs,ALL','-Wl,--version-script='+str(exports),'-Wl,-e,main','-T',str(OUT/'runtime.ld'),*objects,'-Wl,--start-group',str(RT/'libstdcpp_pic.a'),str(RT/'libunwind_pic.a'),str(BASE/'runtime/libhmm_pic.a'),'-Wl,--end-group','-o',str(OUT/'HMM2.raw.ELF'),'-Wl,-Map,'+str(OUT/'HMM2.map')]
     if options.compact_branches:args.insert(0,'-mno-target-align')
     rsp=OUT/'link.rsp';rsp.write_text('\n'.join('"'+s.replace('\\','/')+'"' for s in args),encoding='utf-8')
     # Codex: GCC -save-temps повторно использовал старые ltrans.o после изменения числа разделов.

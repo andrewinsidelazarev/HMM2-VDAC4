@@ -1,15 +1,15 @@
 {
-  "build": 138,
+  "build": 159,
   "contains_game_dat": false,
   "requires_game_dat": true,
   "required_dat_path": "GAMES/VDAC4/HMM2 VDAC4/HMM2.DAT",
-  "required_dat_bytes": 547492852,
-  "required_dat_sha256": "d0c1390d5bbbc1c6e227a8775f3ff595c7588a0412e845c48ee6c7d40be7a236",
+  "required_dat_bytes": 561203136,
+  "required_dat_sha256": "e5e7da0243fc57172bbc96cca954fbaccdc3f55bc94d3d46394064ecc06bac6d",
   "runtime_files": [
     {
       "path": "GAMES/VDAC4/HMM2 VDAC4/_HMM2.SPG",
       "bytes": 201216,
-      "sha256": "96825e6fc10c22fbeefc7b08d02226837f71524f3d61999d53797a963194c2b7"
+      "sha256": "8611099addeaa561958b68c42cacb1b9d087cfc28f08a9036924cebfb8a21377"
     },
     {
       "path": "GAMES/VDAC4/HMM2 VDAC4/FHEROES2.CFG",
@@ -18,8 +18,8 @@
     },
     {
       "path": "GAMES/VDAC4/HMM2 VDAC4/HMM2.ELF",
-      "bytes": 1648464,
-      "sha256": "d854557bd057350a90c49086e6d82575b556563dbf36cc4de6e6f371d38e0a7f"
+      "bytes": 1650528,
+      "sha256": "d460ef515cb67d26fd01a0e6f051ff5d47a0dc8b8ccf71744e814ac7d09ecf36"
     },
     {
       "path": "GAMES/VDAC4/HMM2 VDAC4/HSD.ELF",
@@ -83,8 +83,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 1702,
-      "sha256": "6399ad0cbf4850327447ca2c024eadb5d975a2d4e11648ac1c946b09641288e8"
+      "bytes": 1789,
+      "sha256": "0fc0212c0325bde872ad8e48c1730a982e7be4c63f3774a2ce91e72fd6b5232c"
     },
     {
       "path": "WC/ESP/OGG.ELF",
@@ -93,7 +93,9 @@
     }
   ],
   "launcher_revision": "wc-f7-reserved",
-  "physical_speed_measured": true,
+  "physical_speed_measured": false,
   "physical_speed_confirmed": false,
-  "build_notes": "../docs/BUILD138.md"
+  "build_notes": "../docs/BUILD159.md",
+  "contains_language_resources": false,
+  "physical_levelup_cursor_verified": true
 }

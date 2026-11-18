@@ -1,9 +1,9 @@
 """Codex: исполняем исходный генератор объектов и проверяем обратное восстановление таблиц."""
 from pathlib import Path
 import subprocess,json,hashlib,sys
-from build_stage1 import VC,KIT
+from build_stage1 import BASE,VC,KIT
 from compile_probe import ROOT,SRC,SDK
-OUT=Path('E:/zx/cache/tmp/hmm2_esp/fix1/object_table')
+OUT=BASE/'object_table'
 
 def transform(source):
     start=source.index('    void populateRoads(');end=source.index('    void populateObjectData()',start)
@@ -32,5 +32,5 @@ def main():
     (ROOT/'main/hmm_objects.inc').write_text(text,encoding='utf-8')
     decoded,again=dump('restored',transform(original),True);assert decoded==raw and counts==again
     report=dict(source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest(),counts=counts.strip(),all_fields_and_order_exact=True)
-    (ROOT/'Docs/evidence/stage1_fix1_objects.json').write_text(json.dumps(report,indent=2),encoding='utf-8');print(report)
+    (OUT/'report.json').write_text(json.dumps(report,indent=2),encoding='utf-8');print(report)
 if __name__=='__main__':main()

@@ -81,3 +81,10 @@
 !/_SD/GAMES/VDAC4/HMM2 VDAC4/_HMM2.SPG
 !/_SD/GAMES/VDAC4/HMM2 VDAC4/HSD.ELF
 !/_SD/WC/ESP/OGG.ELF
+
+# Private localization catalogs and built language resources
+/localization/
+/.private_assets/
+**/HMM2.RUS
+**/HMM2.RUFT
+**/HMM2.SUB

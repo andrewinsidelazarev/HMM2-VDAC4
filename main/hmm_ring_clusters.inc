@@ -45,20 +45,27 @@ HMM_SIZE_RENDER bool emit_ring_clusters(const Rect &roi,int tx,int ty){
             auto &slot=map_clusters[(unsigned(cy)&3)*4+(unsigned(cx)&3)];
             if(slot&&(slot->x!=cx||slot->y!=cy)){map_cache_release(slot->part);slot.reset();}
             if(!slot){slot.reset(new MapCluster);slot->x=cx;slot->y=cy;}
-            auto &c=*slot;std::array<uint64_t,64> keys{};
+            auto &c=*slot;
             const int bx=cx*8,by=cy*8;
-            for(int y=0;y<8;++y)for(int x=0;x<8;++x){
-                const int wx=bx+x,wy=by+y;
-                if(wx<ring_x||wx>=ring_x+ring_cols||wy<ring_y||wy>=ring_y+ring_rows)continue;
-                const auto *cell=ring_cell(wx,wy);
-                if(cell&&cell->valid)keys[y*8+x]=((skeleton?cell->base_id:cell->live_id)<<1)|unsigned(cell->frame_cached);
+            const int sx=std::max(bx,ring_x),sy=std::max(by,ring_y);
+            const int ex=std::min(bx+8,ring_x+ring_cols),ey=std::min(by+8,ring_y+ring_rows);
+            uint64_t revision=0, visible=0, background_cached=0;
+            // A changed cell always gets a globally newer ID. With the same
+            // set of cells, the maximum therefore detects every change.
+            for(int y=sy;y<ey;++y)for(int x=sx;x<ex;++x){
+                const auto *cell=ring_cell(x,y);
+                if(!cell||!cell->valid)continue;
+                const uint64_t bit=UINT64_C(1)<<((y-by)*8+x-bx);
+                visible|=bit;
+                if(cell->frame_cached)background_cached|=bit;
+                revision=std::max(revision,skeleton?cell->base_id:cell->live_id);
             }
-            if(c.part.dirty||c.keys!=keys||c.skeleton!=skeleton){
+            if(c.part.dirty||c.skeleton!=skeleton||c.revision!=revision||
+               c.visible!=visible||c.background_cached!=background_cached){
                 map_cache_release(c.part);c.fills.clear();c.heroes.clear();c.skeleton=skeleton;
                 Sequence<Draw> live;
-                const int sx=std::max(bx,ring_x),sy=std::max(by,ring_y);
                 const uint32_t live_started=prof_now();
-                ring_build_live(live,sx,sy,std::min(bx+8,ring_x+ring_cols)-sx,std::min(by+8,ring_y+ring_rows)-sy,skeleton?&c.heroes:nullptr);
+                ring_build_live(live,sx,sy,ex-sx,ey-sy,skeleton?&c.heroes:nullptr);
                 prof_cycles[P_LIVE]+=prof_now()-live_started;
                 const uint32_t started=prof_now();
                 cluster_emitter_reset();map_compiling=&c.part;cluster_compiling=true;
@@ -70,7 +77,8 @@ HMM_SIZE_RENDER bool emit_ring_clusters(const Rect &roi,int tx,int ty){
                 map_compiling=nullptr;cluster_compiling=false;reset_emitter();
                 prof_cycles[P_SPRITE_BUILD]+=prof_now()-started;
                 if(texture_missed)return false;
-                c.keys=keys;c.part.dirty=false;++cluster_builds;if(skeleton)++skeleton_builds;
+                c.revision=revision;c.visible=visible;c.background_cached=background_cached;
+                c.part.dirty=false;++cluster_builds;if(skeleton)++skeleton_builds;
             }else{++cluster_hits;if(skeleton)++skeleton_hits;}
             cached_textures_use(c.part);
             const uint32_t replay_started=prof_now();

@@ -60,39 +60,56 @@ void hmm_files_menu_cache(int enable){(void)enable;}
 void hmm_files_town_cache(int enable){town_cache=(unsigned)enable;}
 unsigned hmm_files_cached(void){return 0;}
 static uint8_t *window_data(unsigned slot){return window_base+slot*WINDOW;}
-size_t hmm_package_read(uint32_t offset,void *dst,size_t count){
-    if(offset>hmm_package_size)return 0;if(count>hmm_package_size-offset)count=hmm_package_size-offset;
+static size_t cached_read(hmm_file *sidecar,uint32_t offset,void *dst,size_t count){
+    const uint32_t source_size=sidecar?sidecar->size:hmm_package_size;
+    const uint32_t tag=sidecar?0x80000000u:0;
+    if(offset>source_size)return 0;if(count>source_size-offset)count=source_size-offset;
     WINDOW_ENTER();if(!window_ready)windows_reset();
     size_t done=0;while(done<count){
-        const uint32_t at=offset&~(WINDOW-1);const unsigned hash=((at/WINDOW)*2654435761u)>>21;
+        const uint32_t at=offset&~(WINDOW-1),key=at|tag;const unsigned hash=((key/WINDOW)*2654435761u)>>21;
         unsigned slot=window_index[hash];
-        if(slot&&window_at[slot-1]==at)--slot;
+        if(slot&&window_at[slot-1]==key)--slot;
         else {
             // Codex: вытеснение только внутри уже выделенной области.
             if(window_next>=WINDOW_BASE)window_next=0;
             /* Клод: окно продолжает одно из недавних чтений — следующие WINDOW_RUN окон идут одним E4. Запрос на плате стоит около 14 мс, а 8 КиБ
              * читаются почти столько же: зацикленные звуки карты шли по 400 запросов на 100 кадров. Чтение вразброс остаётся по одному окну. */
             unsigned run=1,stream=seq_at;
-            for(unsigned i=0;i<SEQ_STREAMS;i++)if(seq_next[i]==at){stream=i;run=WINDOW_RUN;break;}
+            for(unsigned i=0;i<SEQ_STREAMS;i++)if(seq_next[i]==key){stream=i;run=WINDOW_RUN;break;}
+            // RUS lookups and compressed textures are clustered. Fetch up to
+            // three existing2KiB slots per miss, without another buffer.
+            if(sidecar&&run<3)run=3;
             if(stream==seq_at)seq_at=(seq_at+1)%SEQ_STREAMS;
             /* Окна одного E4 лежат в памяти подряд: только внутри одного блока кэша. */
             const unsigned block_left=WINDOW_BASE-window_next;
             if(run>block_left)run=block_left;
-            if((uint64_t)at+(uint64_t)run*WINDOW>hmm_package_size)run=1;
+            if(sidecar&&run>3)run=3; /* FILEX permits at most7680 bytes. */
+            if((uint64_t)at+(uint64_t)run*WINDOW>source_size)run=1;
             slot=window_next;window_next+=run;
             for(unsigned i=0;i<run;i++)window_at[slot+i]=WINDOW_NONE;
-            const uint32_t n=hmm_package_size-at<run*WINDOW?hmm_package_size-at:run*WINDOW;
+            const uint32_t n=source_size-at<run*WINDOW?source_size-at:run*WINDOW;
             /* Клод: read_block обслуживает звук, уже получив данные. Вложенное чтение звука могло занять по кругу это же окно
              * и испортить данные игры (сборка 64 на плате), поэтому до закрытия окна звук ждёт. */
-            window_busy=1;hmm_read_hold=1;const size_t got=hmm_remote_read(at,window_data(slot),n);hmm_read_hold=0;window_busy=0;
+            window_busy=1;hmm_read_hold=1;
+            const size_t got=sidecar?(hmm_fs_call(1,sidecar->name,0,at,window_data(slot),n,0)?0:n):hmm_remote_read(at,window_data(slot),n);
+            hmm_read_hold=0;window_busy=0;
             if(got!=n){WINDOW_LEAVE();hmm_fail("Evo: short package read");return done;}
-            for(unsigned i=0;i<run;i++){const uint32_t where=at+i*WINDOW;window_at[slot+i]=where;window_index[((where/WINDOW)*2654435761u)>>21]=(uint16_t)(slot+i+1);}
-            seq_next[stream]=at+run*WINDOW;
+            for(unsigned i=0;i<run;i++){const uint32_t where=(at+i*WINDOW)|tag;window_at[slot+i]=where;window_index[((where/WINDOW)*2654435761u)>>21]=(uint16_t)(slot+i+1);}
+            seq_next[stream]=key+run*WINDOW;
         }
         size_t n=WINDOW-(offset-at);if(n>count-done)n=count-done;
         memcpy((uint8_t*)dst+done,window_data(slot)+(offset-at),n);done+=n;offset+=(uint32_t)n;
     }
     WINDOW_LEAVE();return done;
+}
+size_t hmm_package_read(uint32_t offset,void *dst,size_t count){return cached_read(0,offset,dst,count);}
+size_t hmm_file_cached_read(hmm_file *f,uint32_t offset,void *dst,size_t count){
+    if(f&&f->packed&&!f->writable&&!f->prefix){
+        if(offset>f->size)return 0;if(count>f->size-offset)count=f->size-offset;
+        return cached_read(0,f->base+offset,dst,count);
+    }
+    if(!f||f->packed||f->writable||strcmp(f->name,"HMM2.RUS")||hmm_package_size>=0x80000000u)hmm_fail("HMM2.RUS read failed");
+    return cached_read(f,offset,dst,count);
 }
 static uint32_t rd32(const uint8_t*p){return p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);}
 static void normalize(const char *p,char out[128]){
@@ -216,9 +233,12 @@ size_t hmm_fread(void *dst,size_t size,size_t count,hmm_file *f){
             if(!disk_flush(f))break;
             /* Codex: заголовок списка сохранений помещается в 1 КиБ; тело читаем полными порциями. */
             const unsigned limit=!pos&&bytes<=64?1024:DISK_CHUNK;
-            const uint32_t left=f->size-pos;const unsigned n=left>limit?limit:(unsigned)left;
-            f->buf_n=0;if(hmm_fs_call(1,f->name,0,pos,f->buf,n,0))break;
-            f->buf_at=pos;f->buf_n=n;
+            /* FILEX handles an unaligned seek, but its following reads cannot
+             * continue with FAT32_READ. Keep the physical buffer sector-aligned;
+             * the caller still receives exactly the requested logical bytes. */
+            const uint32_t at=pos&~511u,left=f->size-at;const unsigned n=left>limit?limit:(unsigned)left;
+            f->buf_n=0;if(hmm_fs_call(1,f->name,0,at,f->buf,n,0))break;
+            f->buf_at=at;f->buf_n=n;
         }
         size_t n=f->buf_n-(pos-f->buf_at);if(n>bytes-done)n=bytes-done;
         memcpy((uint8_t*)dst+done,f->buf+(pos-f->buf_at),n);done+=n;

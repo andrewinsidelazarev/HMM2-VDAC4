@@ -1,3 +1,4 @@
+#include "hmm_locale.h"
 /* Codex: оригинальный WAIT и движение мыши отдельно от слоёв экрана. */
 #include "hmm_loading.h"
 #include "hmm_audio.h"
@@ -10,6 +11,7 @@
 #include "screen.h"
 #include "settings.h"
 #include "ui_text.h"
+#include "translations.h"
 #include <cstdio>
 extern "C" void hmm_loading_mouse_begin(int x,int y);
 namespace {unsigned depth,ticks;uint32_t last_tick,started,max_gap;bool servicing;}
@@ -25,7 +27,7 @@ static void message_frame(fheroes2::Image &out,int cx,int cy,const char *message
     const auto &leftTop=fheroes2::AGG::GetICN(frame,4),&rightTop=fheroes2::AGG::GetICN(frame,0),&leftBottom=fheroes2::AGG::GetICN(frame,6),&rightBottom=fheroes2::AGG::GetICN(frame,2);
     fheroes2::Blit(leftTop,out,cx-leftTop.width(),cy-leftTop.height());fheroes2::Blit(rightTop,out,cx,cy-rightTop.height());
     fheroes2::Blit(leftBottom,out,cx-leftBottom.width(),cy);fheroes2::Blit(rightBottom,out,cx,cy);
-    const fheroes2::Text text(message,fheroes2::FontType::normalWhite());
+    const fheroes2::Text text(Translation::gettext(message),fheroes2::FontType::normalWhite());
     text.draw(cx-text.width()/2,cy-text.height()/2,out);
 }
 void hmm_status_show(const char *message,bool once){
@@ -79,7 +81,7 @@ extern "C" void hmm_loading_tick(){
     // Codex: звук обслуживается и при чтении меню/атласов до появления Map loading.
     // В незавершённом запросе SD hmm_audio_busy запрещает вложенный обмен.
     hmm_audio_poll();
-    if(!depth||servicing)return;
+    if(hmm_locale_io_busy||!depth||servicing)return;
     const auto now=uint32_t(hmm_millis());if(uint32_t(now-last_tick)<16)return;
     last_tick=now;servicing=true;
     // Клод: на экране курсор двигает своя задача; здесь только положение для игры, без клавиш и щелчков.

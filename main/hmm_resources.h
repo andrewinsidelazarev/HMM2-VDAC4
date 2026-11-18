@@ -12,6 +12,7 @@ const HmmOpaqueRect *hmm_resource_opaque(uint32_t);
 // Клод: отпечаток маски кадра; одинаковый ненулевой отпечаток на том же месте закрывает прежний кадр целиком.
 uint64_t hmm_resource_silhouette(uint32_t);
 const HmmFtImage &hmm_resource_ft(uint32_t,bool);
+const HmmFtImage &hmm_resource_ft(uint32_t key, bool copy, int &width, int &height);
 // Клод: подпись поверх кадра (hmm_loading.cpp); nullptr — убрать.
 void hmm_gpu_status(const fheroes2::Image *,int,int,bool);
 void hmm_gpu_status_hold(const fheroes2::Image *,int,int);
@@ -34,6 +35,8 @@ public:
     HmmMessageLayer &operator=(const HmmMessageLayer&)=delete;
 };
 const uint8_t *hmm_resource_palette();
+bool hmm_resource_mask_stream(uint32_t key);
+void hmm_resource_mask_row(uint32_t key,int x,int y,int width,uint8_t *out);
 uint32_t hmm_resource_pin(uint32_t);
 void hmm_resource_restore_pin(uint32_t,uint32_t);
 bool hmm_resource_id(const fheroes2::Image&,uint32_t&);

@@ -9,6 +9,7 @@ int hmm_audio_self(void);
 #include <exception>
 extern "C" int hmm_exception_pending(void){return std::uncaught_exceptions()!=0;}
 extern "C" void hmm_window_restore_failed(void){
+    if(!hmm_running)return; // Shutdown already suppresses restoration; preserve the original cause.
     if(!hmm_error[0])std::strcpy(hmm_error,"Window restore failed");
     hmm_session_request_stop();
     hmm_core->log("HMM2: window restore failed, session stopped");

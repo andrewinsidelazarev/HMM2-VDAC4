@@ -1,3 +1,7 @@
+#include "smk_decoder.h"
+#if defined(HMM2_HOST) && !defined(HMM2_PACKED)
+#include "hmm_map_export.h"
+#endif
 #include "hmm_clock.h"
 extern "C" {
 #include "hmm_core.h"
@@ -9,6 +13,8 @@ extern "C" {
 #include "game_delays.h"
 #include "game_video.h"
 #include "game_video_type.h"
+#include "campaign_data.h"
+#include "campaign_savedata.h"
 #include "interface_gamearea.h"
 #include "settings.h"
 #include "maps_fileinfo.h"
@@ -25,6 +31,7 @@ extern "C" {
 #include "screen.h"
 #include "players.h"
 #include "heroes.h"
+#include "skill.h"
 #include "route.h"
 #include "maps_tiles.h"
 #include "maps.h"
@@ -40,6 +47,7 @@ void hmm_host_capture_cached_cursor();
 void hmm_host_prefetch_probe();
 #include "ui_castle.h"
 #include "dialog_hotkeys.h"
+#include "dialog_selectscenario.h"
 #include "dialog_system_options.h"
 #include "agg_image.h"
 #include "icn.h"
@@ -48,11 +56,16 @@ void hmm_host_prefetch_probe();
 #include <chrono>
 #include "cursor.h"
 #include "localevent.h"
+#include "ui_window.h"
+#include "ui_dialog.h"
+#include "ui_text.h"
+#ifndef HMM2_PACKED
+static bool hmm_gpu_move_cursor(int,int){return false;}
+#endif
 #ifdef HMM2_PACKED
 #include "hmm_loading.h"
 #include "dialog.h"
 #include "ui_dialog.h"
-#include "ui_window.h"
 #include "spell_book.h"
 #endif
 #include <algorithm>
@@ -62,6 +75,10 @@ void hmm_host_prefetch_probe();
 #include <cstdlib>
 #include <string>
 const char *hmm_test_phase="menu";
+#ifdef HMM2_PACKED
+static bool hmm_test_locale_events();
+static bool hmm_test_locale_game_events();
+#endif
 static bool closing,probe_hotkeys_updates;static unsigned events;
 static bool choose_auto_mode;
 void hmm_host_reject_unwind_alloc(bool);
@@ -80,9 +97,142 @@ void hmm_test_recruit_leave(){if(recruit_repeat){in_recruit=false;std::printf("R
 static bool scene_play;
 unsigned hmm_host_frame_count();
 static unsigned idle_dismissed;
+static uint64_t clip_test_started;
+static bool clip_test_escape;
 struct RouteDone {};
 static Heroes *route_hero;static int route_start,route_target;static bool route_started,route_triggered;
+static bool ivy_choose_active;
+static uint64_t ivy_started;
+static int ivy_step;
+#include "hmm_file_quit_test.inc"
+static bool saveDateDialog, saveDateEditing;
+static unsigned saveDatePolls;
+static bool scenarioWheelDialog;
+static unsigned scenarioWheelPolls;
+static int scenarioX, scenarioY;
+static const char *scenarioWheelCase;
+static const char *skillChoiceCase;
+static bool skillChoiceDialog;
+static unsigned skillChoicePolls;
 void hmm_scene_events(){
+    if(skillChoiceDialog){
+        const unsigned tick=++skillChoicePolls;
+        const auto key=[](SDL_Keycode code) {
+            SDL_Event e{};
+            e.type=SDL_KEYDOWN;e.key.keysym.sym=code;SDL_PushEvent(&e);
+            e.type=SDL_KEYUP;SDL_PushEvent(&e);
+        };
+        if(*skillChoiceCase=='m'){
+            if(tick==12||tick==34||tick==36){
+                SDL_Event e{};
+                if(tick==12){
+                    e.type=SDL_MOUSEMOTION;e.motion.x=250;e.motion.y=355;
+                }
+                else {
+                    e.type=tick==34?SDL_MOUSEBUTTONDOWN:SDL_MOUSEBUTTONUP;
+                    e.button.button=SDL_BUTTON_LEFT;e.button.state=tick==34?SDL_PRESSED:SDL_RELEASED;
+                    e.button.x=250;e.button.y=355;
+                }
+                SDL_PushEvent(&e);
+            }
+        }
+        else{
+            if(tick==12||tick==16)key(SDLK_LEFT);
+            if(tick==24&&*skillChoiceCase=='r')key(SDLK_RIGHT);
+            if(tick==40)key(SDLK_RETURN);
+        }
+        if(tick>144)throw std::runtime_error("level-up choice did not respond");
+        return;
+    }
+    if(scenarioWheelDialog){
+        const unsigned tick=++scenarioWheelPolls;
+        const auto move=[](int x,int y) {
+            SDL_Event e{};
+            e.type=SDL_MOUSEMOTION;e.motion.x=x;e.motion.y=y;
+            SDL_PushEvent(&e);
+        };
+        const auto wheel=[](int y) {
+            SDL_Event e{};
+            e.type=SDL_MOUSEWHEEL;e.wheel.y=y;
+            SDL_PushEvent(&e);
+        };
+        const auto left=[](bool down,int x,int y) {
+            SDL_Event e{};
+            e.type=down?SDL_MOUSEBUTTONDOWN:SDL_MOUSEBUTTONUP;
+            e.button.button=SDL_BUTTON_LEFT;e.button.state=down?SDL_PRESSED:SDL_RELEASED;
+            e.button.x=x;e.button.y=y;
+            SDL_PushEvent(&e);
+        };
+        const auto key=[](SDL_Keycode code) {
+            SDL_Event e{};
+            e.type=SDL_KEYDOWN;e.key.keysym.sym=code;SDL_PushEvent(&e);
+            e.type=SDL_KEYUP;SDL_PushEvent(&e);
+        };
+        const int rowX=scenarioX+100,rowY=scenarioY+64;
+        if(tick==12){
+            if(*scenarioWheelCase=='l')move(rowX,rowY);
+            else if(*scenarioWheelCase=='b')move(scenarioX+333,scenarioY+120);
+            else if(*scenarioWheelCase=='o')move(scenarioX+40,rowY);
+            else if(*scenarioWheelCase=='a'){
+                move(scenarioX+333,scenarioY+222);
+                left(true,scenarioX+333,scenarioY+222);
+            }
+        }
+        if(tick==14&&*scenarioWheelCase=='a')left(false,scenarioX+333,scenarioY+222);
+        if((tick==14||tick==16||tick==18)&&*scenarioWheelCase!='a'&&*scenarioWheelCase!='k')
+            wheel(tick==18?1:-1);
+        if(tick==18&&*scenarioWheelCase=='k')key(SDLK_DOWN);
+        if(tick==20&&*scenarioWheelCase!='k')move(rowX,rowY);
+        if(tick==22&&*scenarioWheelCase!='k')left(true,rowX,rowY);
+        if(tick==24&&*scenarioWheelCase!='k')left(false,rowX,rowY);
+        if(tick==26)key(SDLK_RETURN);
+        if(tick>144)throw std::runtime_error("scenario list did not respond");
+        return;
+    }
+    if(saveDateDialog){
+        if(++saveDatePolls==24){
+            SDL_Event e{};
+            e.type=SDL_KEYDOWN;
+            e.key.state=SDL_PRESSED;
+            e.key.keysym.sym=saveDateEditing?SDLK_ESCAPE:SDLK_RETURN;
+            SDL_PushEvent(&e);
+            e.type=SDL_KEYUP;
+            e.key.state=SDL_RELEASED;
+            SDL_PushEvent(&e);
+        }
+        if(saveDatePolls>144)throw std::runtime_error("date dialog did not respond");
+        return;
+    }
+
+    if(hmm_main_exit_events())return;
+    if(hmm_file_quit_events())return;
+    if(ivy_choose_active){
+        const unsigned elapsed=unsigned(hmm_millis()-ivy_started);
+        if(elapsed>22000)throw std::runtime_error("IVY selector did not react");
+        const int pick=std::atoi(std::getenv("HMM2_TEST_IVY_PICK"));
+        const bool mouse=std::getenv("HMM2_TEST_IVY_MOUSE")!=nullptr;
+        const int phase=elapsed/3500;
+        if(mouse&&phase<4&&phase!=ivy_step){
+            ivy_step=phase;const int px[]={316,102,533,316},py[]={104,216,216,321};
+            SDL_Event e{};e.type=SDL_MOUSEMOTION;e.motion.x=px[phase];e.motion.y=py[phase];SDL_PushEvent(&e);
+        }
+        if(elapsed>=14500&&ivy_step<5){
+            ivy_step=5;SDL_Event e{};
+            if(mouse&&pick<4){const int px[]={316,102,533,316},py[]={104,216,216,321};e.type=SDL_MOUSEMOTION;e.motion.x=px[pick];e.motion.y=py[pick];SDL_PushEvent(&e);e={};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;e.button.state=SDL_PRESSED;e.button.x=px[pick];e.button.y=py[pick];SDL_PushEvent(&e);}
+            else {e.type=SDL_KEYDOWN;e.key.keysym.sym=pick==4?SDLK_ESCAPE:SDLK_1+pick;SDL_PushEvent(&e);e.type=SDL_KEYUP;SDL_PushEvent(&e);}
+        }
+        if(mouse&&pick<4&&elapsed>=14600&&ivy_step==5){ivy_step=6;const int px[]={316,102,533,316},py[]={104,216,216,321};SDL_Event e{};e.type=SDL_MOUSEBUTTONUP;e.button.button=SDL_BUTTON_LEFT;e.button.state=SDL_RELEASED;e.button.x=px[pick];e.button.y=py[pick];SDL_PushEvent(&e);}
+        return;
+    }
+
+    if(clip_test_started&&!clip_test_escape)if(const char *ms=std::getenv("HMM2_TEST_CLIP_STOP_MS")){
+        if(hmm_millis()-(clip_test_started-1)>=unsigned(std::atoi(ms))){
+            clip_test_escape=true;SDL_Event e{};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_ESCAPE;SDL_PushEvent(&e);e.type=SDL_KEYUP;SDL_PushEvent(&e);
+        }
+    }
+#ifdef HMM2_PACKED
+    if(hmm_test_locale_events()||hmm_test_locale_game_events())return;
+#endif
     if(choose_auto_mode){
         if(++events==5){SDL_Event e{};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_a;SDL_PushEvent(&e);e.type=SDL_KEYUP;SDL_PushEvent(&e);}
         if(events>1000)throw std::runtime_error("auto mode dialog input timeout");
@@ -175,11 +325,161 @@ static void dump_map(){
     }
     std::fflush(stdout);
 }
+#include "hmm_ru_export.inc"
+#include "hmm_locale_test.inc"
+#include "hmm_locale_game_test.inc"
+#include "hmm_menu_cycle_test.inc"
+#include "hmm_subtitles_test.inc"
 extern "C" int hmm_scene_run(){
+#if defined(HMM2_HOST) && !defined(HMM2_PACKED)
+    if(const char *mode=std::getenv("HMM2_EXPORT_LANGUAGE"))return hmm_export_locale(mode);
+#endif
     const char *map=std::getenv("HMM2_TEST_MAP");if(!map)return 0;
     auto &conf=Settings::Get();auto &display=fheroes2::Display::instance();
+    if((skillChoiceCase=std::getenv("HMM2_TEST_SKILL_CHOICE"))) {
+        conf.SetGameType(Game::TYPE_STANDARD);
+        if(!conf.setGameLanguage("ru"))throw std::runtime_error("Russian font unavailable");
+        if(Game::Load("./files/save/AUTOSAVE.sav")!=fheroes2::GameMode::START_GAME)
+            throw std::runtime_error("Wilfrey save did not load");
+        auto *hero=world.GetHeroes(Heroes::WILFREY);
+        if(!hero)throw std::runtime_error("Wilfrey missing from save");
+        const Skill::Secondary wisdom(Skill::Secondary::WISDOM, Skill::Level::EXPERT);
+        const Skill::Secondary leadership(Skill::Secondary::LEADERSHIP, Skill::Level::BASIC);
+        fheroes2::drawMainMenuScreen();
+        display.render();
+        phase("skill_choice");
+        skillChoiceDialog=true;
+        const int selected=Dialog::LevelUpSelectSkill(hero->GetName(),Skill::Primary::POWER,wisdom,leadership,*hero);
+        skillChoiceDialog=false;
+        if(skillChoicePolls<(*skillChoiceCase=='m'?36u:40u))
+            throw std::runtime_error("level-up choice committed before confirmation");
+        if(selected!=(*skillChoiceCase=='r'?leadership.Skill():wisdom.Skill()))
+            throw std::runtime_error("unexpected skill selected");
+        std::printf("SKILL CHOICE PASS mode=%s hero=%s skill=%d polls=%u\nSCENARIO COMPLETE\n",
+                    skillChoiceCase,hero->GetName().c_str(),selected,skillChoicePolls);
+        return 1;
+    }
+    if((scenarioWheelCase=std::getenv("HMM2_TEST_SCENARIO_WHEEL"))) {
+        conf.SetGameType(Game::TYPE_STANDARD);
+        if(std::getenv("HMM2_TEST_DATE_RU")&&!conf.setGameLanguage("ru"))
+            throw std::runtime_error("Russian font unavailable");
+        auto maps=Maps::getAllMapFileInfos(1);
+        if(maps.size()<10)throw std::runtime_error("scenario list missing fixture maps");
+        conf.setCurrentMapInfo(maps.front());
+        const auto &panel=fheroes2::AGG::GetICN(ICN::REQSBKG,0);
+        scenarioX=(display.width()-panel.width())/2;
+        scenarioY=(display.height()-panel.height())/2;
+        fheroes2::drawMainMenuScreen();
+        display.render();
+        phase("scenario_wheel");
+        scenarioWheelDialog=true;
+        const auto *selected=Dialog::SelectScenario(maps,false);
+        scenarioWheelDialog=false;
+        const size_t expected=*scenarioWheelCase=='o'?0:1;
+        if(selected!=&maps[expected])
+            throw std::runtime_error(std::string("unexpected scenario selected: ")+(selected?selected->filename:"none"));
+        std::printf("SCENARIO WHEEL PASS mode=%s count=%zu selected=%zu (%s)\nSCENARIO COMPLETE\n",
+                    scenarioWheelCase,maps.size(),expected,selected->filename.c_str());
+        return 1;
+    }
+    if(std::getenv("HMM2_TEST_SAVE_DATES")) {
+        const char *sorting = std::getenv("HMM2_TEST_SORT_PREF");
+        if(sorting && !conf.Read("./fheroes2.cfg"))
+            throw std::runtime_error("Cannot read sort preference fixture");
+        const bool useFilename = sorting && std::string_view(sorting)=="filename";
+        const std::string serialized = useFilename?"save file sorting = filename\n":"save file sorting = date\n";
+        if(conf.String().find(serialized)==std::string::npos)
+            throw std::runtime_error("Wrong sort preference after reading configuration");
+        conf.SetGameType(Game::TYPE_STANDARD);
+        if(std::getenv("HMM2_TEST_DATE_RU")&&!conf.setGameLanguage("ru"))throw std::runtime_error("Russian font unavailable");
+        conf.setInterfaceType(std::getenv("HMM2_EVIL_UI")?InterfaceType::EVIL:InterfaceType::GOOD);
+        for(auto font : {fheroes2::FontType::normalWhite(), fheroes2::FontType::normalYellow(),
+                         fheroes2::FontType::smallWhite(),fheroes2::FontType::smallYellow()}) {
+            int32_t widestDigit=0;
+            for(char digit='0';digit<='9';++digit)
+                widestDigit=std::max(widestDigit, fheroes2::Text(std::string(1,digit),font).width());
+            const int32_t maximum=12*widestDigit+fheroes2::Text(".. :",font).width();
+            std::printf("DATE WIDTH font=%d/%d worst=%d available=129\n",int(font.size),int(font.color),maximum);
+            if(font.size==fheroes2::FontSize::SMALL && maximum>129)
+                throw std::runtime_error("formatted date can exceed its column");
+        }
+        phase("date_load_base");
+        fheroes2::drawMainMenuScreen();
+        display.render();
+        phase("date_load_dialog");
+        saveDateDialog=true;
+        saveDatePolls=0;
+        const auto path=Dialog::SelectFileLoad();
+        saveDateDialog=false;
+        Maps::FileInfo selected;
+        const uint32_t expectedTimestamp=useFilename?1794958503u:1798761600u;
+        if(!Game::LoadSAV2FileInfo(path,selected)||selected.timestamp!=expectedTimestamp)
+            throw std::runtime_error("Unexpected first save in the load dialog");
+        std::printf("DATE LOAD SELECTED %s\n",path.c_str());
+        saveDateDialog=true;
+        saveDatePolls=0;
+        const auto loaded=Game::Load(path);
+        saveDateDialog=false;
+        if(loaded!=fheroes2::GameMode::START_GAME)throw std::runtime_error("January save did not load");
+        phase("date_save_dialog");
+        fheroes2::drawMainMenuScreen();
+        display.render();
+        const uint8_t rtc[]={2,0,0,0,1,1,0x27,0x80};
+        if(!hmm_clock_sync(rtc,sizeof(rtc)))throw std::runtime_error("New Year RTC fixture");
+        saveDateEditing=true;
+        saveDateDialog=true;
+        saveDatePolls=0;
+        const auto canceled=Dialog::SelectFileSave();
+        saveDateDialog=false;
+        if(!canceled.empty())throw std::runtime_error("save dialog was not canceled");
+        std::puts("SAVE DATE PASS\nSCENARIO COMPLETE");
+        return 1;
+    }
+    if(std::getenv("HMM2_TEST_FILE_QUIT"))return hmm_test_file_quit();
+    if(std::getenv("HMM2_TEST_MAIN_EXIT"))return hmm_test_main_exit();
+#ifdef HMM2_PACKED
+    if(std::getenv("HMM2_TEST_MENU_CYCLE"))return hmm_test_menu_cycle();
+    if(std::getenv("HMM2_TEST_LOCALE"))return hmm_test_locale();
+    if(const char *language=std::getenv("HMM2_GAME_LANGUAGE"))if(!conf.setGameLanguage(language))throw std::runtime_error("requested test language unavailable");
+    if(std::getenv("HMM2_TEST_SUBTITLES"))return hmm_test_subtitles();
+#endif
     Rand::CurrentThreadRandomDevice()=Rand::PCG32(12345,6789);
     phase("menu");fheroes2::drawMainMenuScreen();display.render();
+    if(std::getenv("HMM2_TEST_VIDEO_HEADERS")){
+        std::vector<std::string> paths;
+        hmm_list_dir("video",[](const char *p,void *v){static_cast<std::vector<std::string>*>(v)->emplace_back(p);},&paths);
+        unsigned count=0,withPalette=0;
+        for(const auto &name:paths)if(name.size()>4&&name.substr(name.size()-4)==".smk"){
+            SMKVideoSequence clip("video/"+name);const auto palette=clip.getCurrentPalette();
+            const bool ivy=name=="ivypol.smk"||name=="ivyvoy.smk"||name=="ivywiz.smk"||name=="ivydes.smk";
+            if(!clip.frameCount()||palette.size()!=(ivy?768u:0u))throw std::runtime_error("Clip header/palette mismatch");
+            ++count;withPalette+=ivy;std::printf("CLIPMETA %s frames=%lu palette=%zu\n",name.c_str(),clip.frameCount(),palette.size());
+        }
+        std::printf("CLIP HEADERS count=%u palettes=%u\nSCENARIO COMPLETE\n",count,withPalette);return 1;
+    }
+    if(std::getenv("HMM2_TEST_IVY_PICK")){
+        ivy_choose_active=true;ivy_started=hmm_millis();ivy_step=-1;
+        const auto mode=Game::NewPriceOfLoyaltyCampaign();ivy_choose_active=false;display.render();
+        auto &save=Campaign::CampaignSaveData::Get();
+        std::printf("IVY RESULT mode=%d campaign=%d scenario=%d\n",int(mode),save.getCampaignID(),save.getCurrentScenarioID());
+        std::printf("IVY MODES select=%d cancel=%d\n",int(fheroes2::GameMode::SELECT_CAMPAIGN_SCENARIO),int(fheroes2::GameMode::NEW_GAME));
+        fheroes2::drawMainMenuScreen();display.render();std::puts("SCENARIO COMPLETE");return 1;
+    }
+    if(std::getenv("HMM2_TEST_CAMPAIGN_UI")){
+        for(int id:{Campaign::ROLAND_CAMPAIGN,Campaign::ARCHIBALD_CAMPAIGN,Campaign::PRICE_OF_LOYALTY_CAMPAIGN,
+                    Campaign::DESCENDANTS_CAMPAIGN,Campaign::WIZARDS_ISLE_CAMPAIGN,Campaign::VOYAGE_HOME_CAMPAIGN}){
+            auto &save=Campaign::CampaignSaveData::Get();save.reset();save.setCurrentScenarioInfo({id,0});
+            auto hex=[&](const char *kind,const char *value){std::printf("CAMPAIGN TEXT %d %s ",id,kind);for(const unsigned char *p=reinterpret_cast<const unsigned char*>(value);*p;++p)std::printf("%02x",unsigned(*p));std::puts("");};
+            hex("name",Campaign::getCampaignName(id));
+            for(const auto &scenario:Campaign::CampaignData::getCampaignData(id).getAllScenarios()){
+                hex("scenario",scenario.getScenarioName());hex("description",scenario.getDescription());
+            }
+            conf.SetGameType(Game::TYPE_CAMPAIGN);std::printf("CAMPAIGN UI id=%d\n",id);
+            closing=true;events=0;Game::SelectCampaignScenario(fheroes2::GameMode::MAIN_MENU,true);closing=false;
+            SDL_FlushEvents(SDL_FIRSTEVENT,SDL_LASTEVENT);display.render();
+        }
+        std::puts("ALL SIX CAMPAIGN UI COMPLETE\nSCENARIO COMPLETE");return 1;
+    }
     // Codex: чтение настоящего CFG и штатная запись проверяют нормализацию скорости.
     if(const char *expected=std::getenv("HMM2_TEST_SCROLL_SETTING")){
         if(conf.ScrollSpeed()!=std::atoi(expected))throw std::runtime_error("scroll setting mismatch");
@@ -198,7 +498,8 @@ extern "C" int hmm_scene_run(){
         else {const auto colon=text.find(':',plus);const auto second=text.find(':',colon+1);
             infos.push_back({text.substr(0,plus),Video::VideoControl::PLAY_VIDEO_LOOP});
             infos.push_back({text.substr(plus+1,colon-plus-1),Video::VideoControl::PLAY_CUTSCENE,{std::atoi(text.c_str()+colon+1),std::atoi(text.c_str()+second+1)}});}
-        const bool shown=Video::ShowVideo(infos);display.render();
+        clip_test_started=hmm_millis()+1;clip_test_escape=false;
+        const bool shown=Video::ShowVideo(infos);clip_test_started=0;display.render();
         fheroes2::drawMainMenuScreen();display.render();
         std::printf("CLIP shown=%d\n",int(shown));std::puts("SCENARIO COMPLETE");std::fflush(stdout);if(!shown)throw std::runtime_error("clip not shown");return 1;
     }
@@ -211,12 +512,15 @@ extern "C" int hmm_scene_run(){
         state("target_save");dump_map();std::printf("TARGET SAVE DAY=%u\n",world.CountDay());std::puts("TARGET SAVE LOAD COMPLETE\nSCENARIO COMPLETE");return 1;
     }
     if(std::getenv("HMM2_TEST_ALLMAPS")){
-        ListFiles maps;maps.ReadDir("maps",".mp2");maps.ReadDir("maps",".mx2");
+        ListFiles maps;maps.ReadDir("maps",".mp2");maps.ReadDir("maps",".mx2");maps.ReadDir("maps",".h2c");maps.ReadDir("maps",".hxc");
         for(auto &name:maps)std::transform(name.begin(),name.end(),name.begin(),[](unsigned char c){return char(std::tolower(c));});maps.sort();
         unsigned count=0;
         for(const auto &name:maps){
             Rand::CurrentThreadRandomDevice()=Rand::PCG32(12345,6789);Maps::FileInfo item;
             if(!item.readMP2Map(name,false))throw std::runtime_error("all maps info");
+#if defined(HMM2_HOST) && !defined(HMM2_PACKED)
+            hmm_export_map_text("map",name.c_str());hmm_export_map_text("name",item.name.c_str());hmm_export_map_text("description",item.description.c_str());
+#endif
             conf.SetGameType(Game::TYPE_STANDARD);conf.setCurrentMapInfo(item);conf.GetPlayers().SetStartGame();
             if(!world.LoadMapMP2(item.filename,item.version==GameVersion::SUCCESSION_WARS))throw std::runtime_error("all maps load");
             state(name.c_str());++count;
@@ -260,6 +564,19 @@ extern "C" int hmm_scene_run(){
     phase("map");auto &ui=Interface::AdventureMap::Get();ui.reset();ui.ResetFocus(0,false);
     if(std::getenv("HMM2_TEST_HERO_FOCUS")){auto *hero=world.GetKingdom(colors.front()).GetHeroes().at(heroIndex);ui.SetFocus(hero,false);ui.getGameArea().SetCenter(hero->GetCenter());}
     ui.redraw(Interface::REDRAW_ALL);display.render();
+    if(std::getenv("HMM2_TEST_RECRUIT_DIRECT")){
+        for(unsigned i=0;i<3;++i){
+            phase("recruit_direct");std::printf("RECRUIT DIRECT begin=%u frame=%u\n",i,hmm_host_frame_count());
+            recruit_repeat=true;recruit_events=town_events=0;recruit_opens=0;
+            Dialog::RecruitMonster(Monster(Monster::ZOMBIE),6,false,0);recruit_repeat=false;
+            std::printf("RECRUIT DIRECT end=%u frame=%u\n",i,hmm_host_frame_count());
+            SDL_FlushEvents(SDL_FIRSTEVENT,SDL_LASTEVENT);display.render();
+        }
+        std::puts("RECRUIT DIRECT COMPLETE\nSCENARIO COMPLETE");return 1;
+    }
+#ifdef HMM2_PACKED
+    if(std::getenv("HMM2_TEST_LOCALE_GAME"))return hmm_test_locale_game();
+#endif
     if(std::getenv("HMM2_MENU_HOTKEYS")){
         for(unsigned i=0;i<3;++i){phase("menu_background");fheroes2::drawMainMenuScreen();display.render();
             phase("hotkeys");closing=true;events=0;probe_hotkeys_updates=true;fheroes2::openHotkeysDialog();probe_hotkeys_updates=false;closing=false;

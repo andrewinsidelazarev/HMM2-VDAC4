@@ -373,13 +373,13 @@ Run:
         cp #F5
         call z,KeysAcknowledged
         cp #E4
-        call z,ServeRead
+        jr z,.read
         cp #E5
-        call z,ServeFile
+        jr z,.file
         cp #E6
-        call z,ServeGraphics
+        jr z,.graphics
         cp #E7
-        call z,ServeMusic
+        jr z,.music
         cp #F3
         jr nz,.keys
         xor a
@@ -394,12 +394,27 @@ Run:
         ; Клод: только когда от ESP ничего нет — Z80 читает HMM2.DAT вперёд
         ; в кольцо 2 МиБ; поток запросов подряд не задерживается.
         call FastIdle
+        jr c,.send_keys ; Poll input after each read-ahead block.
 .keys:
         ld hl,KeyDivider
         dec (hl)
         jr nz,Run
+.send_keys:
         call SendKeys
         jp Run
+; Disk replies finish before polling input. Continuous I/O cannot starve input.
+.read:
+        call ServeRead
+        jr .send_keys
+.file:
+        call ServeFile
+        jr .send_keys
+.graphics:
+        call ServeGraphics
+        jr .send_keys
+.music:
+        call ServeMusic
+        jr .send_keys
 
 AppFailed:
         call CaptureAppError

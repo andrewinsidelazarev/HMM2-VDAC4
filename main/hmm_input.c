@@ -32,10 +32,16 @@ static void mouse_live(void){
 }
 static unsigned mouse_update(void){
     unsigned count=0;
-    int dx,dy,buttons;uint32_t when;
-    while(head-tail<=252&&hmm_mouse_next(&dx,&dy,&buttons,&emx,&emy,&when)){
+    int dx,dy,wheel,buttons;uint32_t when;
+    // Reserve space for motion, the wheel and three button edges.
+    while(head-tail<=251&&hmm_mouse_next(&dx,&dy,&wheel,&buttons,&emx,&emy,&when)){
         ++count;
         if(dx||dy){SDL_Event e={0};e.type=SDL_MOUSEMOTION;e.motion.x=emx;e.motion.y=emy;e.motion.xrel=dx*2;e.motion.yrel=-dy*2;push(&e);}
+        if(wheel){
+            SDL_Event e={0};e.type=SDL_MOUSEWHEEL;e.wheel.direction=SDL_MOUSEWHEEL_NORMAL;
+            e.wheel.y=wheel;
+            push_at(&e,when);
+        }
         const uint8_t map[3]={SDL_BUTTON_LEFT,SDL_BUTTON_RIGHT,SDL_BUTTON_MIDDLE};
         for(unsigned i=0;i<3;i++)if((buttons^mouse_old)&(1<<i)){SDL_Event e={0};int down=buttons&(1<<i);e.type=down?SDL_MOUSEBUTTONDOWN:SDL_MOUSEBUTTONUP;e.button.state=down?SDL_PRESSED:SDL_RELEASED;e.button.button=map[i];e.button.x=emx;e.button.y=emy;push_at(&e,when);}mouse_old=buttons;
     }

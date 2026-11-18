@@ -10,6 +10,8 @@ void hmm_audio_shutdown(void);
 int hmm_audio_busy(void);
 /* Клод: вызов идёт из задачи звука. */
 int hmm_audio_self(void);
+/* Audibly played campaign samples, excluding pending SD/OGG opening and PCM queue. */
+unsigned hmm_audio_clip_elapsed(void);
 #ifdef __cplusplus
 }
 #endif

@@ -1,0 +1,757 @@
+{
+  "engine/image.cpp": {
+    "base": "a465c360379cafd62989cbb91940fdd8d80ef99b165531fc42062c300aecb3ab",
+    "result": "d0b0abe07154eb8f26c0215945f44e613415d33d2afc2632e95c4df22d55d898",
+    "edits": [
+      [
+        0,
+        0,
+        "#ifdef HMM2_PACKED\n#include \"hmm_button_shadow.h\"\n#endif\n"
+      ],
+      [
+        895,
+        895,
+        "        if(hmm_prepared_button_shadow(in,out,outPos,shadowOffset))return true;\n"
+      ]
+    ]
+  },
+  "engine/serialize.cpp": {
+    "base": "30230621c77b1a18515147df40c1b1076078c42352caf079a618aad07a9111ac",
+    "result": "d590b4fbe918ec04bb0283162253043ad644bfadc3fdc872287598a4c649c0a0",
+    "edits": [
+      [
+        423,
+        424,
+        "    // Codex: ошибка последнего буфера/синхронизации должна быть видна после close.\n    if ( _file && closeFile( _file.release() ) != 0 ) {\n        setFail( true );\n    }\n"
+      ]
+    ]
+  },
+  "engine/smk_decoder.h": {
+    "base": "d3fa9f336b6877eaec84a73fe7553eeba09e7c4df49517c95e536f1a008ef5e1",
+    "result": "1db074764ffc24b9f03b83a8e9446607e411c1981467977a4d4819445b2e7efc",
+    "edits": [
+      [
+        44,
+        44,
+        "    void syncPlaybackClock(bool audible) const;\n"
+      ]
+    ]
+  },
+  "engine/translations.cpp": {
+    "base": "d2facfad142a3a5946b1a263e22f409a1d93d6d49a219c78fb19a10665aebdcf",
+    "result": "ed8c175f6de5d0f28b7795e086069f80d8eca5b33b74cac84536bf2b895dc8fd",
+    "edits": [
+      [
+        44,
+        44,
+        "\n#ifndef HMM2_PACKED\n"
+      ],
+      [
+        710,
+        710,
+        "#endif\n\n"
+      ]
+    ]
+  },
+  "fheroes2/ai/ai_planner.h": {
+    "base": "6813fb8985d292194ce78553356de0130c7ae714658c859edfa63e7aa8a16e0b",
+    "result": "cc03b01e6833df13d6626d233ab23fdff88dde475e2d59febcf9dfbd764f0af2",
+    "edits": [
+      [
+        180,
+        180,
+        "#ifdef HMM2_PACKED\n        void preparePathfinder()\n        {\n            _pathfinder.prepareCache();\n        }\n#endif\n\n"
+      ]
+    ]
+  },
+  "fheroes2/castle/castle_tavern.cpp": {
+    "base": "3ec8752eeaa5a63b5e3a41c5496ae0fa0f1c2d1081d19bdfe9558543715841af",
+    "result": "223184254f2ed05ef21e0b7fa0363958195ef5b49372e32047ce68f227833574",
+    "edits": [
+      [
+        0,
+        0,
+        "#include \"hmm_map_text.h\"\n"
+      ],
+      [
+        47,
+        48,
+        "    text->add( fheroes2::hmm_map_text( std::move( rumor.text ), fheroes2::FontType::normalWhite(), rumor.language ) );\n"
+      ]
+    ]
+  },
+  "fheroes2/dialog/dialog_file.cpp": {
+    "base": "7beb64adc466d914fb1a1cffeeba65f5f87c41db084220a606ef71f6a299fb92",
+    "result": "37a68ff5908e63863fef87c05638bdd0bf1545185f892b30c4c85c056cb0c41e",
+    "edits": [
+      [
+        117,
+        118,
+        "                    // VDAC4: the file menu returns to the game main menu.\n                    result = fheroes2::GameMode::MAIN_MENU;\n"
+      ],
+      [
+        142,
+        143,
+        "                fheroes2::showStandardTextMessage( _( \"Quit\" ), _( \"Click to return to the main menu.\" ), Dialog::ZERO );\n"
+      ]
+    ]
+  },
+  "fheroes2/dialog/dialog_gameinfo.cpp": {
+    "base": "8e74f806d13f889d123be83f867e815d90f5809bb27fb53c782af9ba750220ab",
+    "result": "651ef500840e857efd38c3ad7d8cb9749eb63b720ee3dfdee7893a28caead0b5",
+    "edits": [
+      [
+        0,
+        0,
+        "#include \"hmm_map_text.h\"\n"
+      ],
+      [
+        124,
+        125,
+        "    auto text = fheroes2::hmm_map_text( mapInfo.name, fheroes2::FontType::normalWhite(), mapLanguage );\n"
+      ],
+      [
+        169,
+        170,
+        "    text = fheroes2::hmm_map_text( mapInfo.description, fheroes2::FontType::smallWhite(), mapLanguage );\n"
+      ],
+      [
+        232,
+        233,
+        "            const auto body = fheroes2::hmm_map_text( mapInfo.description, fheroes2::FontType::normalWhite(), mapLanguage );\n"
+      ],
+      [
+        236,
+        237,
+        "            text = fheroes2::hmm_map_text( mapInfo.name, fheroes2::FontType::normalYellow(), mapLanguage );\n"
+      ]
+    ]
+  },
+  "fheroes2/dialog/dialog_hotkeys.cpp": {
+    "base": "8ed2101a73dd0d5c1734aff2b4d25cbd75ae7d34983d3eb3ab55651848be8e05",
+    "result": "10169d97d5e8ff21366059f803e60e05c0eb1ec51053b86f783f58f0bb42ae07",
+    "edits": [
+      [
+        293,
+        293,
+        "        // Use FT coprocessor composition and dirty updates for this window.\n"
+      ]
+    ]
+  },
+  "fheroes2/dialog/dialog_language_selection.cpp": {
+    "base": "83b2226cdbd0b1056c5d128b695d5f8ff65d27731b5d261d6abf81b691e1c681",
+    "result": "4cdceac06c8d3a4cf6c294ca9b546b7c6306f03aff899f15077b81b0590ef029",
+    "edits": [
+      [
+        49,
+        49,
+        "\n#ifdef HMM2_PACKED\n#include \"hmm_language_dialog.inc\"\n#else\n"
+      ],
+      [
+        342,
+        345,
+        ""
+      ],
+      [
+        376,
+        376,
+        "\n#endif\n"
+      ]
+    ]
+  },
+  "fheroes2/dialog/dialog_levelup.cpp": {
+    "base": "32ab6d49fcd2ff1922d1730132e10ba3b9916aaf0075359c0c20007bd1aca520",
+    "result": "6008be39cfb3a3d9ff3feb7df4cfbef026776773b8178d89c0138592c319bda3",
+    "edits": [
+      [
+        157,
+        157,
+        "        int selectedSkill = Skill::Secondary::UNKNOWN;\n"
+      ],
+      [
+        158,
+        160,
+        "            if ( Game::HotKeyPressEvent( Game::HotKeyEvent::DEFAULT_LEFT ) ) {\n                selectedSkill = sec1.Skill();\n            }\n            else if ( Game::HotKeyPressEvent( Game::HotKeyEvent::DEFAULT_RIGHT ) ) {\n                selectedSkill = sec2.Skill();\n            }\n\n            buttonLearnLeft.drawOnState( selectedSkill == sec1.Skill() || le.isMouseLeftButtonPressedAndHeldInArea( buttonLearnLeft.area() ) );\n            buttonLearnRight.drawOnState( selectedSkill == sec2.Skill() || le.isMouseLeftButtonPressedAndHeldInArea( buttonLearnRight.area() ) );\n"
+      ],
+      [
+        162,
+        163,
+        "            if ( le.MouseClickLeft( buttonLearnLeft.area() ) ) {\n"
+      ],
+      [
+        166,
+        167,
+        "            if ( le.MouseClickLeft( buttonLearnRight.area() ) ) {\n"
+      ],
+      [
+        170,
+        171,
+        "            const bool confirm = Game::HotKeyPressEvent( Game::HotKeyEvent::DEFAULT_OKAY );\n            if ( confirm && selectedSkill != Skill::Secondary::UNKNOWN ) {\n                return selectedSkill;\n            }\n\n            if ( le.MouseClickLeft( buttonHero.area() ) || confirm ) {\n"
+      ]
+    ]
+  },
+  "fheroes2/dialog/dialog_selectfile.cpp": {
+    "base": "4320c15098ba542e14e651a26245634e3e6b575fb7f384ea5c12f0c1e10c367d",
+    "result": "968b34a6003c49098dba20e4d12a82670136499561e3510be57d3a5af4578668",
+    "edits": [
+      [
+        0,
+        0,
+        "#include \"hmm_map_text.h\"\n"
+      ],
+      [
+        65,
+        66,
+        "    constexpr int32_t dialogWidth = 464;\n    constexpr int32_t listWidthDeduction = 75;\n    constexpr int32_t maxFileNameWidth = 244;\n    constexpr int32_t fileNameColumnWidth = maxFileNameWidth + 8;\n    constexpr int32_t dateTimeWidth = dialogWidth - listWidthDeduction - fileNameColumnWidth;\n"
+      ],
+      [
+        67,
+        68,
+        "    void redrawDateTime( fheroes2::Image & output, const time_t timestamp, const int32_t dstx, int32_t dsty, fheroes2::FontType font )\n"
+      ],
+      [
+        69,
+        70,
+        "        char dateTime[sizeof( \"DD.MM.YYYY HH:MM\" )];\n        const tm calendar = System::GetTM( timestamp );\n        if ( std::strftime( dateTime, sizeof( dateTime ), \"%d.%m.%Y %H:%M\", &calendar ) == 0 ) {\n            return;\n        }\n"
+      ],
+      [
+        71,
+        75,
+        "        fheroes2::Text text( dateTime, font );\n        constexpr int32_t horizontalPadding = 4;\n        if ( text.width() > dateTimeWidth - horizontalPadding * 2 ) {\n            font.size = fheroes2::FontSize::SMALL;\n            dsty += ( text.height() - fheroes2::getFontHeight( font.size ) ) / 2;\n            text.set( dateTime, font );\n        }\n"
+      ],
+      [
+        76,
+        101,
+        "        text.draw( dstx + ( dateTimeWidth - text.width() ) / 2, dsty, output );\n"
+      ],
+      [
+        142,
+        143,
+        "            body.add( fheroes2::hmm_map_text( info.name, fheroes2::FontType::normalWhite(), info.getSupportedLanguage() ) );\n"
+      ],
+      [
+        189,
+        190,
+        "        redrawDateTime( display, info.timestamp, dstx + fileNameColumnWidth, dsty, font );\n"
+      ],
+      [
+        343,
+        344,
+        "        fheroes2::StandardWindow background( dialogWidth, std::min<int32_t>( display.height() - 100, maxDialogHeight ), true, display );\n"
+      ],
+      [
+        346,
+        349,
+        "        const fheroes2::Rect listRoi( dialogArea.x + 24, dialogArea.y + 57, dialogArea.width - listWidthDeduction, dialogArea.height - listHeightDeduction );\n        const fheroes2::Rect nameHeaderRoi( listRoi.x, listRoi.y - 28, fileNameColumnWidth, 28 );\n        const fheroes2::Rect textInputRoi( listRoi.x, listRoi.y + listRoi.height + 3, fileNameColumnWidth, 23 );\n"
+      ],
+      [
+        350,
+        351,
+        ""
+      ]
+    ]
+  },
+  "fheroes2/dialog/dialog_selectscenario.cpp": {
+    "base": "332adf70899bff7ce73afc1872ed24ff8a744b889ba5c51ba84e558aaf0fa711",
+    "result": "79bec3c165008ad118af13a25ef72659231694147497552f9c61ae78b255877e",
+    "edits": [
+      [
+        0,
+        0,
+        "#include \"hmm_map_text.h\"\n"
+      ],
+      [
+        327,
+        328,
+        "    auto mapNameText = fheroes2::hmm_map_text( info.name, fheroes2::FontType::normalWhite(), info.getSupportedLanguage() );\n"
+      ],
+      [
+        344,
+        345,
+        "    auto descriptionText = fheroes2::hmm_map_text( info.description, fheroes2::FontType::normalWhite(), info.getSupportedLanguage() );\n"
+      ],
+      [
+        353,
+        356,
+        "    auto mapName = fheroes2::hmm_map_text( info.name, { fheroes2::FontSize::NORMAL, ( selected ? fheroes2::FontColor::YELLOW : fheroes2::FontColor::WHITE ) }, info.getSupportedLanguage() );\n"
+      ],
+      [
+        815,
+        816,
+        "            const auto body = fheroes2::hmm_map_text( scenarioList.GetCurrent().description, fheroes2::FontType::normalWhite(), scenarioList.GetCurrent().mainLanguage );\n"
+      ]
+    ]
+  },
+  "fheroes2/dialog/dialog_system_options.cpp": {
+    "base": "a3924691bc72c9f80be5795ae753dfe028a056e6e024880cc3a85d80f4315430",
+    "result": "c982d813499d9862dbee9b4280dd2bf14ea6799a4295a43d4a8efeb7dcd210d7",
+    "edits": [
+      [
+        394,
+        394,
+        "#ifdef HMM2_PACKED\n                const std::string hmmPreviousLanguage = conf.getGameLanguage();\n#endif\n"
+      ],
+      [
+        410,
+        410,
+        "#ifdef HMM2_PACKED\n                // The next hardware popup captures the last published scene.\n                // Publish the translated map panels before capturing its backdrop.\n                if ( hmmPreviousLanguage != conf.getGameLanguage() ) {\n                    Display::instance().render();\n                }\n#endif\n"
+      ]
+    ]
+  },
+  "fheroes2/game/game_campaign.cpp": {
+    "base": "6f836e2cc2a32de6580d69c72f7d80574b7b79d69fc147ca11b4ab644b8f1504",
+    "result": "faec68995b7837dce238468593b0e8262d93aab7d91772efdca63c447e3077a5",
+    "edits": [
+      [
+        0,
+        0,
+        "#ifdef HMM2_PACKED\n#include \"hmm_campaign_labels.h\"\n#endif\n"
+      ],
+      [
+        1331,
+        1331,
+        "#ifdef HMM2_PACKED\n    hmm_campaign_labels( backgroundIconID, display, top );\n#endif\n"
+      ]
+    ]
+  },
+  "fheroes2/game/game_highscores.cpp": {
+    "base": "4fe67b05f1838daf88e79789f0cb339f4b83aa3ea8c17aef42d6c29a232596f9",
+    "result": "c8e7124ba6176936c9e8a67edfbf27f569e457267fed91f89e8309f5ad3da7f5",
+    "edits": [
+      [
+        0,
+        0,
+        "#include \"hmm_map_text.h\"\n"
+      ],
+      [
+        215,
+        216,
+        "            text = fheroes2::hmm_map_text( data.scenarioName, font, language );\n"
+      ]
+    ]
+  },
+  "fheroes2/game/game_mainmenu.cpp": {
+    "base": "36254a1570839f5ab96cc96884195c78453dae2e8a98113f853c2326d964dd69",
+    "result": "6d1209078db0d75e1494f9363e15530a5f034dd92c57144222b1d9d8fce5c1dd",
+    "edits": [
+      [
+        63,
+        63,
+        "#include \"ui_window.h\"\n#include \"ui_text.h\"\n"
+      ],
+      [
+        84,
+        84,
+        "\n    // VDAC4: standard message frame and balanced vertical gaps.\n    void showMainMenuExitPrompt( const int buttons )\n    {\n        const char * exitLabel = Settings::Get().getGameLanguage() == \"ru\" ? _( \"Main menu|Quit\" ) : \"Exit\";\n        const std::string message = std::string( \"F12 - \" ) + exitLabel;\n        if ( buttons == Dialog::ZERO ) {\n            fheroes2::showStandardTextMessage( exitLabel, message, Dialog::ZERO );\n            return;\n        }\n        auto & display = fheroes2::Display::instance();\n        Dialog::FrameBox window( 60, true );\n        const auto & area = window.GetArea();\n        const fheroes2::Text header( exitLabel, fheroes2::FontType::normalYellow() );\n        const fheroes2::Text body( message, fheroes2::FontType::normalWhite() );\n        const std::string caption = std::string( \"ESC - \" ) + _( \"Cancel\" );\n        fheroes2::Sprite released, pressed;\n        fheroes2::Point releasedOffset, pressedOffset;\n        fheroes2::getCustomNormalButton( released, pressed, Settings::Get().isEvilInterfaceEnabled(), { 190, 30 }, releasedOffset, pressedOffset, ICN::STONEBAK );\n        fheroes2::ButtonSprite cancel( 0, 0, std::move( released ), std::move( pressed ) );\n        const int gap = std::max<int32_t>( 0, ( area.height - header.height() - body.height() - cancel.area().height ) / 4 );\n        const int headerY = area.y + gap;\n        const int bodyY = headerY + header.height() + gap;\n        header.draw( area.x, headerY, area.width, display );\n        body.draw( area.x, bodyY, area.width, display );\n        cancel.setPosition( area.x + ( area.width - cancel.area().width ) / 2, bodyY + body.height() + gap );\n        const fheroes2::Text captionText( caption, fheroes2::FontType::normalWhite() );\n        const auto drawCancel = [&]() {\n            cancel.draw();\n            const auto & buttonArea = cancel.area();\n            captionText.draw( buttonArea.x, buttonArea.y + ( buttonArea.height - captionText.height() ) / 2 + ( cancel.isPressed() ? 1 : 0 ), buttonArea.width, display );\n        };\n        drawCancel();\n        display.render();\n        auto & le = LocalEvent::Get();\n        while ( le.HandleEvents() ) {\n            const bool held = le.isMouseLeftButtonPressedAndHeldInArea( cancel.area() );\n            if ( held != cancel.isPressed() ) {\n                if ( held ) { cancel.press(); } else { cancel.release(); }\n                drawCancel();\n                display.render( cancel.area() );\n            }\n            if ( Game::HotKeyCloseWindow() || le.MouseClickLeft( cancel.area() ) ) {\n                break;\n            }\n        }\n    }\n"
+      ],
+      [
+        376,
+        379,
+        "            showMainMenuExitPrompt( Dialog::CANCEL );\n"
+      ],
+      [
+        392,
+        393,
+        "            showMainMenuExitPrompt( Dialog::ZERO );\n"
+      ]
+    ]
+  },
+  "fheroes2/game/game_newgame.cpp": {
+    "base": "c494604da52c0e29aba08cb78e2eed4b26037de94d6c69e85fddbd3012b4db4c",
+    "result": "6bf4cbc9cc1ff1933b45c2e91a50a5f47cb4f2e8ecb011d47aeed2045c9990d6",
+    "edits": [
+      [
+        349,
+        349,
+        "        // IVY selector: Escape returns to New Game.\n        if ( HotKeyPressEvent( HotKeyEvent::DEFAULT_CANCEL ) ) {\n            break;\n        }\n"
+      ]
+    ]
+  },
+  "fheroes2/game/game_scenarioinfo.cpp": {
+    "base": "573d97bd660d3a88b5e4fadf044892b7dbe84bb6f2918ed84472afe4c1cd581a",
+    "result": "fd9fc31fa6b44dd0f64e612ce19c15fac0c8773c1c178ff1a3ce618a8a3faa2c",
+    "edits": [
+      [
+        0,
+        0,
+        "#include \"hmm_map_text.h\"\n"
+      ],
+      [
+        132,
+        133,
+        "        auto text = fheroes2::hmm_map_text( info.name, fheroes2::FontType::normalWhite(), info.getSupportedLanguage() );\n"
+      ]
+    ]
+  },
+  "fheroes2/game/game_startgame.cpp": {
+    "base": "b2e5900724c91603b9050b963024a117b07dc760e948f0db25d40c2f8eb490d5",
+    "result": "70a0caf6809b2e564e1ebdeeed85585ba9661c3624cfb38d95892140817d640e",
+    "edits": [
+      [
+        3,
+        3,
+        "#include \"hmm_map_text.h\"\n"
+      ],
+      [
+        1066,
+        1068,
+        "                fheroes2::showResourceMessage( fheroes2::hmm_map_text( event.title, fheroes2::FontType::normalYellow(), language ),\n                                               fheroes2::hmm_map_text( event.message, fheroes2::FontType::normalWhite(), language ), Dialog::OK, funds );\n"
+      ],
+      [
+        1070,
+        1072,
+        "                const auto header = fheroes2::hmm_map_text( event.title, fheroes2::FontType::normalYellow(), language );\n                const auto body = fheroes2::hmm_map_text( event.message, fheroes2::FontType::normalWhite(), language );\n"
+      ]
+    ]
+  },
+  "fheroes2/game/game_video.cpp": {
+    "base": "49709888f448981b928d84ff99065754c41d3bc75488d455cbb952e668acc21a",
+    "result": "2602f50ce319439d40afda489a9d5abdb4d99d2f16665888a7e8a144d7a3b264",
+    "edits": [
+      [
+        22,
+        22,
+        "#ifdef HMM2_PACKED\n#include \"hmm_subtitles.h\"\n#include \"hmm_audio.h\"\n#endif\n\n"
+      ],
+      [
+        162,
+        162,
+        "        #ifdef HMM2_PACKED\n        HmmVideoSubtitles speechSubtitles( infos );\n        #endif\n\n"
+      ],
+      [
+        190,
+        190,
+        "        #ifdef HMM2_PACKED\n        bool speechFramePrimed = false;\n        if ( speechSubtitles.active() ) {\n            // Prepare/upload the first words before speech can advance past them.\n            speechSubtitles.render( display, videoRoi, 0 );\n            display.render( videoRoi );\n            speechFramePrimed = true;\n            for ( auto & sequence : sequences ) sequence.second->syncPlaybackClock( Audio::isValid() );\n        }\n        const uint64_t speechStarted = speechSubtitles.active() ? hmm_millis() : 0;\n        #endif\n"
+      ],
+      [
+        209,
+        209,
+        "                #ifdef HMM2_PACKED\n                if ( speechFramePrimed ) speechFramePrimed = false;\n                else {\n                    if ( speechSubtitles.active() )\n                        speechSubtitles.render( display, videoRoi, Audio::isValid() ? hmm_audio_clip_elapsed() : uint32_t( hmm_millis() - speechStarted ) );\n                    display.render( videoRoi );\n                }\n                #else\n"
+      ],
+      [
+        210,
+        210,
+        "                #endif\n"
+      ]
+    ]
+  },
+  "fheroes2/gui/ui_language.cpp": {
+    "base": "92f464463e9bfb2ea2689ae156e93b839d95b091c3ec7d2970fca9ffefc5024a",
+    "result": "9bc5c912333203ede49c0eab43bfe060c0bce1c8962b53ff7ed7fab8a0c22f81",
+    "edits": [
+      [
+        0,
+        0,
+        "#ifdef HMM2_PACKED\n#include \"hmm_locale.h\"\n#endif\n"
+      ],
+      [
+        115,
+        115,
+        "#ifdef HMM2_PACKED\n        std::vector<SupportedLanguage> result{ SupportedLanguage::English };\n        if ( hmm_ru_prepare() ) result.push_back( SupportedLanguage::Russian );\n        return result;\n#else\n\n"
+      ],
+      [
+        159,
+        160,
+        "    #endif\n}\n"
+      ],
+      [
+        163,
+        163,
+        "#ifdef HMM2_PACKED\n        return language == SupportedLanguage::Russian ? _( \"Russian\" ) : _( \"English\" );\n#else\n\n"
+      ],
+      [
+        215,
+        216,
+        "    #endif\n}\n"
+      ]
+    ]
+  },
+  "fheroes2/heroes/heroes_action.cpp": {
+    "base": "9ba598d7a84857453321c9e062d1e71b666722715d1d56cbb80debe9c71de4f0",
+    "result": "e04ab9098a2eb6b5279f403b83db00ee6a8115cee5004ed7a9f6407589e54730",
+    "edits": [
+      [
+        3,
+        3,
+        "#include \"hmm_map_text.h\"\n"
+      ],
+      [
+        349,
+        350,
+        "        const auto body = fheroes2::hmm_map_text( sign->message.text, fheroes2::FontType::normalWhite(), sign->message.language );\n"
+      ],
+      [
+        2893,
+        2894,
+        "        const auto body = fheroes2::hmm_map_text( mapEvent->message, fheroes2::FontType::normalWhite(), Settings::Get().getCurrentMapInfo().getSupportedLanguage() );\n"
+      ],
+      [
+        3565,
+        3566,
+        "            questionText.add( fheroes2::hmm_map_text( riddle->riddle, fheroes2::FontType::normalWhite(), language ) );\n"
+      ]
+    ]
+  },
+  "fheroes2/maps/maps_objects.cpp": {
+    "base": "13dddbe38360306e49b33ebb07181b3a74adc234c94e1fa25792f725ce879b5d",
+    "result": "c9afa94d871b8be9d83aeb02ed2d45dc59a531948b529b876f3b9f25a2cc983e",
+    "edits": [
+      [
+        0,
+        0,
+        "#ifdef HMM2_PACKED\n#include \"hmm_locale.h\"\n#include \"translations.h\"\n#endif\n"
+      ],
+      [
+        274,
+        274,
+        "#ifdef HMM2_PACKED\n    if ( hmm_ru_active() ) {\n        for ( const auto & original : answers ) {\n            if ( hmm_ru_map_answer( original.c_str(), answer.c_str(), isTruncatedAnswer ) ) return true;\n        }\n    }\n#endif\n"
+      ]
+    ]
+  },
+  "fheroes2/system/settings.cpp": {
+    "base": "b9a93ea993f1d8752dde5da7a05bede45d4571f26e8895bdf135880225103a82",
+    "result": "5f47ae4fb598885974b6c13db42562b69f42367d0505ea1a2c4fdbefd5c5f23f",
+    "edits": [
+      [
+        105,
+        106,
+        "    , _saveFileSortType( SaveFileSortingMethod::TIMESTAMP )\n"
+      ],
+      [
+        397,
+        405,
+        "    // Older versions wrote \"name\" even when the player had never selected an order.\n    _saveFileSortType = config.StrParams( \"save file sorting\" ) == \"filename\" ? SaveFileSortingMethod::FILENAME : SaveFileSortingMethod::TIMESTAMP;\n"
+      ],
+      [
+        597,
+        598,
+        "    os << \"save file sorting = \" << ( _saveFileSortType == SaveFileSortingMethod::TIMESTAMP ? \"date\" : \"filename\" ) << hmmfmt::endl;\n"
+      ],
+      [
+        614,
+        614,
+        "#ifdef HMM2_PACKED\n    if ( language.empty() ) {\n        Translation::reset();\n        _gameLanguage.clear();\n        return true;\n    }\n    if ( language != \"ru\" || !Translation::setLanguage( std::string_view( language ) ).second ) {\n        if ( &language == &_gameLanguage ) { Translation::reset(); _gameLanguage.clear(); }\n        return false;\n    }\n    _gameLanguage = \"ru\";\n    return true;\n#else\n\n"
+      ],
+      [
+        623,
+        627,
+        ""
+      ],
+      [
+        645,
+        645,
+        "#endif\n"
+      ]
+    ]
+  },
+  "fheroes2/world/world.cpp": {
+    "base": "6e07ca59d372205a6673a03a87c1e3120d2b680ba7eb57902bf9657590e8f0a7",
+    "result": "43ef0107e3b6ef1ba76fc92139a3a95951fb2cbd8938f043413063640bb9b190",
+    "edits": [
+      [
+        79,
+        80,
+        "    int32_t findSuitableNeighbouringTile( const WorldTiles & mapTiles, const int32_t tileId, const bool allDirections, Rand::PCG32 & gen )\n"
+      ],
+      [
+        130,
+        131,
+        "    int32_t getNeighbouringEmptyTileCount( const WorldTiles & mapTiles, const int32_t tileId )\n"
+      ],
+      [
+        555,
+        556,
+        "    std::for_each( vec_tiles.begin(), vec_tiles.end(), [&excludeTiles]( const Maps::Tile & tile ) {\n"
+      ],
+      [
+        1315,
+        1315,
+        "#ifndef HMM2_PACKED\n"
+      ],
+      [
+        1316,
+        1316,
+        "#endif\n    // Finish building the regions before allocating both route caches.\n"
+      ],
+      [
+        1317,
+        1317,
+        "#ifdef HMM2_PACKED\n    resetPathfinder();\n    _pathfinder.prepareCache();\n    AI::Planner::Get().preparePathfinder();\n#endif\n"
+      ],
+      [
+        1566,
+        1567,
+        "    stream << w.width << w.height;\n#ifdef HMM2_PACKED\n    // Keep the count and tile order used by the vector in existing saves.\n    stream.put32( static_cast<uint32_t>( w.vec_tiles.size() ) );\n    for ( const Maps::Tile & tile : w.vec_tiles ) {\n        stream << tile;\n    }\n#else\n    stream << w.vec_tiles;\n#endif\n    return stream << w.vec_heroes << w.vec_castles << w.vec_kingdoms << w._customRumors << w.vec_eventsday << w.map_captureobj\n"
+      ],
+      [
+        1585,
+        1586,
+        "#ifdef HMM2_PACKED\n    w.vec_tiles.resize( stream.get32() );\n    for ( Maps::Tile & tile : w.vec_tiles ) {\n        stream >> tile;\n    }\n#else\n    stream >> w.vec_tiles;\n#endif\n    stream >> w.vec_heroes >> w.vec_castles >> w.vec_kingdoms >> w._customRumors >> w.vec_eventsday >> w.map_captureobj >> w._ultimateArtifact >> w._day\n"
+      ]
+    ]
+  },
+  "fheroes2/world/world.h": {
+    "base": "3f571cbc82392109737f7d678e4d87e4959aaea2a63748676903a9dfa6085b82",
+    "result": "193b88de94972607041db0cd89a937f59b9995f7597d547a4de9cf2029cad00b",
+    "edits": [
+      [
+        25,
+        25,
+        "#include <cassert>\n"
+      ],
+      [
+        196,
+        196,
+        "#ifdef HMM2_PACKED\nusing WorldTiles = Sequence<Maps::Tile>;\n#else\nusing WorldTiles = std::vector<Maps::Tile>;\n#endif\n\n"
+      ],
+      [
+        237,
+        242,
+        "        return getTile( y * width + x );\n"
+      ],
+      [
+        246,
+        251,
+        "        return getTile( y * width + x );\n"
+      ],
+      [
+        255,
+        256,
+        "#if defined( HMM2_PACKED )\n        assert( static_cast<size_t>( tileId ) < vec_tiles.size() );\n        return vec_tiles[tileId];\n#elif defined( WITH_DEBUG )\n"
+      ],
+      [
+        264,
+        265,
+        "#if defined( HMM2_PACKED )\n        assert( static_cast<size_t>( tileId ) < vec_tiles.size() );\n        return vec_tiles[tileId];\n#elif defined( WITH_DEBUG )\n"
+      ],
+      [
+        560,
+        561,
+        "    WorldTiles vec_tiles;\n"
+      ]
+    ]
+  },
+  "fheroes2/world/world_loadmap.cpp": {
+    "base": "0365a4376a01364d4204faff26690e2fda6d5b2855ff76ce1691aad577a67625",
+    "result": "a3d2551a510d325e211c17bcfe24898274e2d2d8953f9c94c82b75def78a6a5d",
+    "edits": [
+      [
+        0,
+        0,
+        "#if defined(HMM2_HOST) && !defined(HMM2_PACKED)\n#include \"hmm_map_export.h\"\n#include <cstdlib>\n#endif\n"
+      ],
+      [
+        160,
+        160,
+        "#ifdef HMM2_PACKED\n    // The next map will build its own navigation data.\n    std::vector<MapRegion>().swap( _regions );\n    resetPathfinder();\n#else\n"
+      ],
+      [
+        161,
+        161,
+        "#endif\n"
+      ],
+      [
+        244,
+        244,
+        "#ifdef HMM2_PACKED\n    // Reserve tile pages before the add-ons and the new world objects.\n    const size_t tileCount = static_cast<size_t>( worldSize );\n    vec_tiles.reserve( tileCount );\n    Defaults();\n#endif\n\n"
+      ],
+      [
+        259,
+        262,
+        "    while ( vec_tiles.size() < tileCount ) {\n        vec_tiles.resize( std::min( tileCount, vec_tiles.size() + 128 ) );\n        hmm_loading_tick();\n    }\n"
+      ],
+      [
+        748,
+        748,
+        "#if defined(HMM2_HOST) && !defined(HMM2_PACKED)\n#include \"hmm_map_export_observer.inc\"\n#endif\n"
+      ]
+    ]
+  },
+  "fheroes2/world/world_pathfinding.cpp": {
+    "base": "d92b5571257163a2de916f01cd7319e588d27edc08eb441165c59cd180ff4916",
+    "result": "d949551d586892d31702c4d9606c24ffa280a08cc79174647e66168ea6e73e7f",
+    "edits": [
+      [
+        371,
+        371,
+        "#ifdef HMM2_PACKED\n    // Object and fog updates also reset the routes during map loading.\n    if ( _cache.size() != world.getSize() ) {\n        std::vector<WorldNode>().swap( _cache );\n    }\n#else\n"
+      ],
+      [
+        374,
+        375,
+        "    const size_t worldSize = world.getSize();\n    if ( _cache.size() != worldSize ) {\n"
+      ],
+      [
+        384,
+        384,
+        "#endif\n"
+      ],
+      [
+        391,
+        391,
+        "#ifdef HMM2_PACKED\nvoid WorldPathfinder::prepareCache()\n{\n    const size_t size = world.getSize();\n    if ( _cache.size() == size ) {\n        return;\n    }\n\n    assert( world.w() == world.h() );\n    _cache.resize( size );\n    const auto & directions = Direction::allNeighboringDirections;\n    _mapOffset.resize( directions.size() );\n    for ( size_t i = 0; i < directions.size(); ++i ) {\n        _mapOffset[i] = Maps::GetDirectionIndex( 0, directions[i] );\n    }\n}\n#endif\n\n"
+      ],
+      [
+        393,
+        393,
+        "#ifdef HMM2_PACKED\n    prepareCache();\n#endif\n"
+      ],
+      [
+        554,
+        554,
+        "    if ( !_tileFlags.empty() && _tileFlags.size() != world.getSize() ) {\n        std::vector<TileFlags>().swap( _tileFlags );\n    }\n\n"
+      ],
+      [
+        673,
+        676,
+        "    CachedFlag & accessible = _tileFlags[tileIndex].accessible;\n    if ( accessible == CachedFlag::Unknown ) {\n        accessible = isTileAccessibleForAIWithArmy( tileIndex, _armyStrength, _minimalArmyStrengthAdvantage ) ? CachedFlag::Allowed : CachedFlag::Blocked;\n"
+      ],
+      [
+        678,
+        679,
+        "    return accessible == CachedFlag::Allowed;\n"
+      ],
+      [
+        683,
+        688,
+        "    TileFlags & flags = _tileFlags[tileIndex];\n    CachedFlag & walkThrough = fromWater ? flags.fromWater : flags.fromLand;\n    if ( walkThrough == CachedFlag::Unknown ) {\n        const bool isAllowed = isTileAvailableForWalkThroughForAIWithArmy( tileIndex, fromWater, _color, _isArtifactsBagFull, _isEquippedWithSpellBook,\n                                                                          _armyStrength, _minimalArmyStrengthAdvantage );\n        walkThrough = isAllowed ? CachedFlag::Allowed : CachedFlag::Blocked;\n"
+      ],
+      [
+        690,
+        691,
+        "    return walkThrough == CachedFlag::Allowed;\n"
+      ],
+      [
+        695,
+        695,
+        "#ifdef HMM2_PACKED\n    prepareCache();\n#endif\n"
+      ],
+      [
+        696,
+        696,
+        "    _tileFlags.assign( _cache.size(), TileFlags{} );\n"
+      ]
+    ]
+  },
+  "fheroes2/world/world_pathfinding.h": {
+    "base": "bfd757ef4fdd74c50a6fb66faff4eebbbb9d219a8a3d705e8958fdaf348dbbf5",
+    "result": "93d1b3d3b87bffd5100914efb0141f5ecca132bc6d4386affc61bb0c9ce7c462",
+    "edits": [
+      [
+        46,
+        56,
+        ""
+      ],
+      [
+        85,
+        85,
+        "#ifdef HMM2_PACKED\n    void prepareCache();\n#endif\n"
+      ],
+      [
+        223,
+        223,
+        "    enum class CachedFlag : uint8_t\n    {\n        Unknown,\n        Blocked,\n        Allowed\n    };\n\n    struct TileFlags\n    {\n        CachedFlag accessible{ CachedFlag::Unknown };\n        CachedFlag fromWater{ CachedFlag::Unknown };\n        CachedFlag fromLand{ CachedFlag::Unknown };\n    };\n\n    // Only AI routes use these results. Allocate them when the AI evaluates a path.\n    std::vector<TileFlags> _tileFlags;\n\n"
+      ]
+    ]
+  }
+}

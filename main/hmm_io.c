@@ -1,6 +1,7 @@
 /* Codex: транспорт DOOM VDAC4, авторы и лицензии — THIRD_PARTY.md.
  * SPDX-License-Identifier: GPL-2.0-or-later */
 #include "hmm_core.h"
+#include "hmm_locale.h"
 #include "hmm_platform.h"
 #include "hmm_clock.h"
 #include "hmm_loading.h"
@@ -103,7 +104,7 @@ static void trace_timeout(const char*reason){
 static uint8_t ps2_ring[256];
 static uint8_t ps2_head,ps2_tail,ps2_lost,joy_state;
 static unsigned ps2_produced,ps2_consumed;
-struct MouseSample {int dx,dy;unsigned keys;uint32_t when;uint16_t x,y;uint8_t buttons,edge;};
+struct MouseSample {int dx,dy;unsigned keys;uint32_t when;uint16_t x,y;uint8_t buttons,edge;int8_t wheel;};
 static struct MouseSample mouse_samples[128];
 static unsigned mouse_head,mouse_tail;static int mouse_read_buttons,mouse_queued_buttons,mouse_lost;
 static int mouse_gui_x=320,mouse_gui_y=240;
@@ -117,7 +118,7 @@ static uint32_t keys_time;
  * 1 правая, 2 средняя) и приращения, накопленные до следующего hmm_mouse_take. Разность
  * считается на каждом принятом пакете — между пакетами Z80 (единицы мс) счётчик не успевает
  * уйти на 128. mouse_sync=0 — следующий пакет только задаёт отсчёт. */
-static uint8_t mouse_x,mouse_y,mouse_buttons;
+static uint8_t mouse_x,mouse_y,mouse_buttons,mouse_wheel;
 static int mouse_sync;
 static int32_t mouse_dx,mouse_dy;
 static uint16_t rd16(const uint8_t *p) { return p[0]|((uint16_t)p[1]<<8); }
@@ -128,6 +129,7 @@ static void wr32(uint8_t *p,uint32_t v) { wr16(p,v); wr16(p+2,v>>16); }
 /* Codex: Z80 читает DAT и пишет RAM_G через свой SPI; ESP передаёт только адреса.
  * Подтверждение приходит после DMA, поэтому DL не использует незавершённый битмап. */
 void hmm_remote_graphics(uint32_t offset,uint32_t address,uint32_t size) {
+    if(offset&HMM_RU_SOURCE){hmm_ru_graphics(offset,address,size);return;}
     if(!size||(offset&511)||(size&511)||address>=0x300000||size>0x300000-address
        ||offset>hmm_package_size||size>hmm_package_size-offset)hmm_fail("Invalid graphics transfer");
     while(size){
@@ -234,25 +236,25 @@ int hmm_mouse_take(int *dx,int *dy) {
 }
 /* Keep accepted button transitions in packet order while the game renders.
  * Motion between transitions is coalesced; cursor and game share one consumer. */
-static void mouse_sample(int dx,int dy,int buttons){
+static void mouse_sample(int dx,int dy,int wheel,int buttons){
     const int edge=buttons!=mouse_queued_buttons;mouse_queued_buttons=buttons;
     if(mouse_head!=mouse_tail){struct MouseSample *last=&mouse_samples[(mouse_head-1)&127];
-        if(!edge&&!last->edge&&last->buttons==buttons&&last->keys==ps2_produced){last->dx+=dx;last->dy+=dy;last->x=(uint16_t)mouse_gui_x;last->y=(uint16_t)mouse_gui_y;last->when=keys_time;return;}}
+        if(!edge&&!last->edge&&!wheel&&!last->wheel&&last->buttons==buttons&&last->keys==ps2_produced){last->dx+=dx;last->dy+=dy;last->x=(uint16_t)mouse_gui_x;last->y=(uint16_t)mouse_gui_y;last->when=keys_time;return;}}
     if(mouse_head-mouse_tail==128){mouse_tail=mouse_head;mouse_lost=1;}
     struct MouseSample *sample=&mouse_samples[mouse_head++&127];sample->dx=dx;sample->dy=dy;sample->buttons=(uint8_t)buttons;sample->keys=ps2_produced;sample->edge=(uint8_t)edge;
     sample->x=(uint16_t)mouse_gui_x;sample->y=(uint16_t)mouse_gui_y;
-    sample->when=keys_time;
+    sample->when=keys_time;sample->wheel=(int8_t)wheel;
 }
 void hmm_mouse_position(int *x,int *y){
     hmm_core->mutex_lock(io_mutex);
     *x=mouse_gui_x;*y=mouse_gui_y;
     mouse_dx=mouse_dy=0;hmm_core->mutex_unlock(io_mutex);
 }
-int hmm_mouse_next(int *dx,int *dy,int *buttons,int *x,int *y,uint32_t *when){
-    int got=0;hmm_core->mutex_lock(io_mutex);*dx=*dy=0;*x=mouse_gui_x;*y=mouse_gui_y;*when=0;
+int hmm_mouse_next(int *dx,int *dy,int *wheel,int *buttons,int *x,int *y,uint32_t *when){
+    int got=0;hmm_core->mutex_lock(io_mutex);*dx=*dy=*wheel=0;*x=mouse_gui_x;*y=mouse_gui_y;*when=0;
     if(mouse_lost){mouse_lost=0;*buttons=mouse_read_buttons=0;got=1;}
     else if(mouse_tail!=mouse_head){const struct MouseSample *sample=&mouse_samples[mouse_tail&127];
-        if(sample->keys==ps2_consumed){++mouse_tail;*dx=sample->dx;*dy=sample->dy;*x=sample->x;*y=sample->y;*when=sample->when;*buttons=mouse_read_buttons=sample->buttons;got=1;}}
+        if(sample->keys==ps2_consumed){++mouse_tail;*dx=sample->dx;*dy=sample->dy;*wheel=sample->wheel;*x=sample->x;*y=sample->y;*when=sample->when;*buttons=mouse_read_buttons=sample->buttons;got=1;}}
     else{const int current=(uint32_t)(hmm_core->millis()-keys_time)>500?0:mouse_buttons;
         *buttons=current;if(current!=mouse_read_buttons){mouse_read_buttons=current;got=1;}}
     hmm_core->mutex_unlock(io_mutex);return got;
@@ -270,18 +272,22 @@ static void mouse_packet(const uint8_t *p,int stale) {
         const int previous=mouse_buttons;
         if(previous&&buttons_raw&&hmm_core->log)hmm_core->log("HMM2 INPUT mouseff held=%u",(unsigned)previous);
         mouse_buttons_packet(0);
-        if(previous!=mouse_buttons)mouse_sample(0,0,mouse_buttons);
+        if(previous!=mouse_buttons)mouse_sample(0,0,0,mouse_buttons);
         mouse_sync=0;return;
     }
-    int dx=0,dy=0,previous=mouse_buttons;
+    const uint8_t counter=p[0]>>4;
+    int dx=0,dy=0,wheel=0,previous=mouse_buttons;
     if(mouse_sync && !stale) {
         dx=(int8_t)(uint8_t)(p[1]-mouse_x);dy=(int8_t)(uint8_t)(p[2]-mouse_y);
         mouse_dx+=dx;mouse_dy+=dy;
+        // Kempston wheel counter rolls over modulo 16.
+        const unsigned delta=(unsigned)(counter-mouse_wheel)&15u;
+        wheel=delta<8?(int)delta:(int)delta-16;
     }
-    mouse_x=p[1]; mouse_y=p[2]; mouse_sync=1;
+    mouse_x=p[1]; mouse_y=p[2]; mouse_wheel=counter; mouse_sync=1;
     mouse_gui_x=mouse_bound(mouse_gui_x+dx*2,639);mouse_gui_y=mouse_bound(mouse_gui_y-dy*2,479);
     mouse_buttons_packet((uint8_t)(~p[0]&7));
-    if(dx||dy||previous!=mouse_buttons)mouse_sample(dx,dy,mouse_buttons);
+    if(dx||dy||wheel||previous!=mouse_buttons)mouse_sample(dx,dy,wheel,mouse_buttons);
 }
 int hmm_fs_call(unsigned op,const char *name,const char *other,uint32_t offset,void *data,unsigned length,uint32_t *size) {
     uint8_t request[35]={0};
@@ -297,6 +303,10 @@ int hmm_fs_call(unsigned op,const char *name,const char *other,uint32_t offset,v
     hmm_core->mutex_unlock(io_mutex);
     if(hmm_core->event(0xE5,request,sizeof(request),1000)!=ZM_OK) trace_timeout("SD queue full");
     uint32_t start=hmm_core->millis();
+    /* A new FAT allocation/flush on a real SD can complete after22 seconds.
+     * Do not abort a still-running mutating operation at the read deadline.
+     * The same channel stays owned until74; stop remains checked every20ms. */
+    const uint32_t timeout=op<2?10000u:60000u;
     for(;;) {
         if(!hmm_running) hmm_fail("Application stopped"); hmm_core->signal_wait(io_signal,20);
         hmm_core->mutex_lock(io_mutex);
@@ -311,7 +321,7 @@ int hmm_fs_call(unsigned op,const char *name,const char *other,uint32_t offset,v
         hmm_loading_tick();
         if(!hmm_running)hmm_fail("Application stopped");
         if(done) {trace_end(result);return result;}
-        if((uint32_t)(hmm_core->millis()-start)>10000) trace_timeout("SD timeout");
+        if((uint32_t)(hmm_core->millis()-start)>timeout) trace_timeout("SD timeout");
     }
 }
 int hmm_command(uint8_t cmd,const uint8_t *p,uint16_t n) {

@@ -48,8 +48,10 @@ struct MessageFade {
 std::shared_ptr<MessageCommands> message_scene;
 std::vector<std::unique_ptr<MessageFade>> message_fades;
 MessageFade *message_transition;
+// Cursor patch indices refer to the most recently built display list.
+MessageFade *message_cursor_owner;
 unsigned message_alpha=255;
-HMM_MESSAGE_FN void message_fade_reset(){message_transition=nullptr;message_fades.clear();message_scene.reset();}
+HMM_MESSAGE_FN void message_fade_reset(){message_transition=message_cursor_owner=nullptr;message_fades.clear();message_scene.reset();}
 
 HMM_MESSAGE_FN void message_scene_capture(){
     if(!message_scene||!message_scene.unique())message_scene=std::make_shared<MessageCommands>();
@@ -280,10 +282,11 @@ HMM_MESSAGE_FN void message_window_blits(MessageFade &f){
     for(const auto &item:f.geometry){const Draw d=clip(item,dirty);if(!d.r.w||!d.r.h)continue;
         if(d.layer||d.repeat||d.color||d.step!=1||(!d.fill&&d.mapping))hmm_fail("Unsupported window blit");
         HmmImagePins pins;uint32_t prior=0;const uint8_t *mask=nullptr;int stride=0;
-        const HmmFtImage *ft=nullptr;bool strips=false;unsigned rows=0,loaded=~0u;Texture t{};
+        const HmmFtImage *ft=nullptr;bool strips=false,stream_mask=false;unsigned rows=0,loaded=~0u;Texture t{};
         if(!d.fill){
             if(d.bitmap){bitmap_materialize(*d.bitmap);stride=d.bitmap->w;if(!d.bitmap->single)mask=d.bitmap->pixels.data()+stride*d.bitmap->h;}
-            else {prior=hmm_resource_pin(d.resource);const auto &im=hmm_resource_get(d.resource);stride=im.width();if(!d.raw&&!im.singleLayer())mask=im.transform();
+            else {prior=hmm_resource_pin(d.resource);const auto &im=hmm_resource_get(d.resource);stride=im.width();if(!d.raw&&!im.singleLayer()){
+                    stream_mask=hmm_resource_mask_stream(d.resource);if(!stream_mask)mask=im.transform();}
                 ft=&hmm_resource_ft(d.resource,d.raw);strips=ft->bytes>=STRIP_MIN_BYTES&&!hft_cache_ready(&textures,UINT64_C(0x1000000000000000)|ft->offset,ft->bytes);if(strips)rows=strip_rows(ft->stride);}
             if(!strips)t=texture(d);
             if(t.missing)hmm_fail("Window blit texture missing");
@@ -297,9 +300,11 @@ HMM_MESSAGE_FN void message_window_blits(MessageFade &f){
             if(strips&&unsigned((d.sy+y)/int(rows))!=loaded){flush();
                 if(loaded!=~0u&&!(textures.entries[textures.last_entry].pins&4u))textures.entries[textures.last_entry].pins&=uint8_t(~(1u<<textures.build_slot));
                 loaded=unsigned(d.sy+y)/rows;t=texture_strip(*ft,loaded,rows);if(t.missing)hmm_fail("Window blit strip missing");}
-            for(int x=0;x<d.r.w;){const unsigned m=mask&&!d.raw?mask[(d.sy+y)*stride+d.sx+x]:0;
+            static uint8_t mask_row[640];const uint8_t *row_mask=mask&&!d.raw?mask+(d.sy+y)*stride+d.sx:nullptr;
+            if(stream_mask){if(d.r.w>int(sizeof(mask_row)))hmm_fail("Window mask width");hmm_resource_mask_row(d.resource,d.sx,d.sy+y,d.r.w,mask_row);row_mask=mask_row;}
+            for(int x=0;x<d.r.w;){const unsigned m=row_mask?row_mask[x]:0;
                 if(m){if(m>1)effect[x]=shade(effect[x],m);++x;continue;}
-                const int begin=x++;while(x<d.r.w&&(!mask||d.raw||!mask[(d.sy+y)*stride+d.sx+x]))++x;
+                const int begin=x++;while(x<d.r.w&&(!row_mask||!row_mask[x]))++x;
                 const unsigned sy=strips?unsigned(d.sy+y)%rows:unsigned(d.sy+y);
                 operation(0xffffff1du,address(color,dx+begin,dy),t.address+(t.cell*t.height+sy)*t.stride+d.sx+begin,unsigned(x-begin));std::memset(effect+begin,0,x-begin);
             }
@@ -334,7 +339,7 @@ HMM_MESSAGE_FN void message_window_blits(MessageFade &f){
 }
 
 HMM_MESSAGE_FN int message_text_row(const MessageFade &f,const Draw &d){
-    const unsigned group=d.resource>>16;
+    const unsigned group=(d.resource>>16)&~HMM_RU_GROUP;
     if((group!=ICN::FONT&&group!=ICN::YELLOW_FONT)||d.bitmap||d.fill||d.mapping||d.color||d.step!=1||f.text_height<=0)return -1;
     const auto &sprite=static_cast<const fheroes2::Sprite&>(hmm_resource_get(d.resource));
     const int origin=d.r.y-sprite.y()-d.sy;
@@ -436,7 +441,7 @@ HMM_MESSAGE_FN void message_repeat_vertices(){
 HMM_MESSAGE_FN void message_transition_frame(const uint8_t *rgb){
     auto &f=*message_transition;
     hmm_audio_tick();
-    const bool build=f.program.empty()||!message_alpha;
+    const bool build=f.program.empty()||!message_alpha||message_cursor_owner!=&f;
     hft_cache_begin(&textures,displayed);words=0;dl_overflow=false;reset_emitter();
     std::memset(compact_valid,0,sizeof(compact_valid));std::memset(compact_mask,0,sizeof(compact_mask));compact_handle=0;
     if(build){
@@ -507,7 +512,7 @@ HMM_MESSAGE_FN void message_transition_frame(const uint8_t *rgb){
 #endif
         hmm_fail("Window fade display list exceeds 8 KiB");
     }
-    f.program.assign(dl,dl+words);
+    f.program.assign(dl,dl+words);message_cursor_owner=&f;
     if(f.blit&&f.window_report){
         char log[136];std::snprintf(log,sizeof(log),"HMM2 WINDOW draw=%s words=%u prepare=%u rows=%u/%u",f.window_mode==0?"direct":f.window_mode==1?"hybrid":f.window_mode==2?"rows":"blit",words,unsigned(hmm_core->millis()-f.window_started),f.row_builds,f.row_hits);hmm_log(log);f.window_report=false;
     }
@@ -568,6 +573,7 @@ HMM_MESSAGE_FN void message_fade_close(){
             message_scene=f.background;
         }catch(...){hmm_window_restore_failed();}
     }
+    if(message_cursor_owner==&f)message_cursor_owner=nullptr;
     message_transition=nullptr;message_fades.pop_back();
 }
 }
@@ -615,7 +621,7 @@ extern "C" HMM_MESSAGE_FN void hmm_gpu_frame(const uint8_t *pixels,const uint8_t
         prepare_ms=unsigned(hmm_core->millis()-start)-link_ms;
         frame_bytes=traffic;frame_link=link_ms;traffic=link_ms=gpu_upload_bytes=0;
     }
-    else hmm_gpu_scene_frame(pixels,rgb,w,h);
+    else {message_cursor_owner=nullptr;hmm_gpu_scene_frame(pixels,rgb,w,h);}
 }
 
 #ifndef HMM2_HOST

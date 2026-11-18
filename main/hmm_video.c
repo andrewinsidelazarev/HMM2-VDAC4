@@ -32,12 +32,26 @@ int hmm_video_open(void){
      * связь с Tang — на 11,8 с). Прежде первая же неудачная проверка возвращала 0 навсегда (opened=1), игра шла дальше без
      * hmm_gpu_init: кэш RAM_G оставался нулевым, ни одна текстура не помещалась («layer skipped», free=3072), и первый кадр ролика
      * завершал игру «RAM_G clip capacity». Теперь ядро FT812 ждём до 20 с; не дождались — понятная ошибка, а не игра вслепую. */
-    const int open_result=hmm_core->ft_open(15000);
-    int personality=-1;uint32_t status=0;const uint32_t start=hmm_core->millis();
+    const uint32_t start=hmm_core->millis();
+    int open_result=ZM_NOT_FOUND;
+    /* ft_open can return NOT_FOUND immediately while the firmware is still
+     * discovering LINK. Its timeout only covers the subsequent core switch.
+     * Keep that transient failure inside the same bounded startup deadline. */
+    for(;;){
+        if(!hmm_running)hmm_fail("Application stopped");
+        const uint32_t elapsed=hmm_core->millis()-start;
+        if(elapsed>=20000)break;
+        const uint32_t remaining=20000-elapsed;
+        open_result=hmm_core->ft_open(remaining<15000?remaining:15000);
+        if(open_result==ZM_OK || (open_result!=ZM_NOT_FOUND && open_result!=ZM_BUSY))break;
+        if((uint32_t)(hmm_core->millis()-start)>=20000)break;
+        hmm_core->delay(50);
+    }
+    int personality=-1;uint32_t status=0;
     if(open_result==ZM_OK)for(;;){
         personality=tang_personality();
         if(personality==2&&hmm_core->link_read(0x5c,&status,1)==ZM_OK)break;
-        if((uint32_t)(hmm_core->millis()-start)>20000)break;
+        if((uint32_t)(hmm_core->millis()-start)>=20000)break;
         if(!hmm_running)hmm_fail("Application stopped");
         hmm_core->delay(50);
     }

@@ -223,5 +223,5 @@ int main(int argc,char **argv){
 #endif
     SDL_Quit();
     extern void hmm_host_prefetch_stats();hmm_host_prefetch_stats();
-    std::printf("HMM2 exit=%d frames=%u\n",r,frames);return (frames||std::getenv("HMM2_PACK_OUT"))? r:3;
+    std::printf("HMM2 exit=%d frames=%u\n",r,frames);return (frames||std::getenv("HMM2_PACK_OUT")||std::getenv("HMM2_EXPORT_LANGUAGE"))? r:3;
 }

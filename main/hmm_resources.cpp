@@ -2,6 +2,7 @@
  * Кэш освобождает только незакреплённые пиксели, адрес самого Sprite никогда не меняется.
  * SPDX-License-Identifier: GPL-2.0-or-later */
 #include "hmm_resources.h"
+#include "hmm_locale.h"
 #include "hmm_platform.h"
 #include "hmm_loading.h"
 #include "agg_image.h"
@@ -92,6 +93,7 @@ void open(){if(file)return;file=hmm_fopen("hmm2.ftg","rb");if(!file)throw std::r
     read(16,palette_map,sizeof(palette_map));read(272,groups,sizeof(groups));
 }
 void read_legacy(uint32_t offset,void *p,size_t n){
+    if(offset&HMM_RU_SOURCE){hmm_ru_read(offset&~HMM_RU_SOURCE,p,n);return;}
     if(!legacy)legacy=hmm_fopen("hmm2.gfx","rb");
     if(!legacy||hmm_fseek(legacy,long(offset),0)||hmm_fread(p,1,n,legacy)!=n)throw std::runtime_error("HMM2.GFX: short read");
 }
@@ -332,7 +334,7 @@ void StoredSprite::decode(uint8_t *dst,int x,int y,int w,int h)const{
 #ifdef HMM2_HOST
     if(std::getenv("HMM2_DECODE_TRACE"))std::printf("DECODE group=%u frame=%u bytes=%zu roi=%d,%d,%d,%d\n",id>>16,id&65535,bytes(),x,y,w,h);
 #endif
-    if(raw_pixels){
+    if(raw_pixels||(id&(HMM_RU_GROUP<<16))){
         // Codex: исходные плоскости адресуются непосредственно; кадры выровнены по 512 байтам.
         if(rec.compressed!=bytes())throw std::runtime_error("HMM2.GFX: raw size");
         if(!x&&!y&&w==rec.w&&h==rec.h)read_legacy(rec.offset,dst,bytes());
@@ -370,11 +372,14 @@ void StoredSprite::decode(uint8_t *dst,int x,int y,int w,int h)const{
     bool okay=result==Z_STREAM_END&&z.total_out==bytes()&&z.total_in==rec.compressed;inflateEnd(&z);if(!okay)throw std::runtime_error("HMM2.GFX: damaged frame");
 }
 const fheroes2::Sprite &get(unsigned group,uint32_t index){
-    open();if(group>=sizeof(groups)/sizeof(*groups)||index>=groups[group].count)return empty;
+    // Identical localized frames use the canonical English Sprite and caches.
+    if((group&HMM_RU_GROUP)&&!hmm_ru_frame(group&~HMM_RU_GROUP,index))group&=~HMM_RU_GROUP;
+    open();const bool ru=(group&HMM_RU_GROUP)!=0;const unsigned plain=group&~HMM_RU_GROUP;
+    if(plain>=sizeof(groups)/sizeof(*groups)||index>=(ru?hmm_ru_count(plain):groups[plain].count))return empty;
     if(index>65535)throw std::runtime_error("HMM2.GFX: invalid index");uint32_t key=(group<<16)|index;
     if(auto *found=find_sprite(key))return *found;
-    Record r;read(groups[group].offset+index*sizeof(r),&r,sizeof(r));
-    for(auto &ft:r.ft)if(ft.bytes)ft.offset+=file_base;
+    Record r;if(ru)hmm_ru_record(plain,index,&r);else{read(groups[plain].offset+index*sizeof(r),&r,sizeof(r));
+    for(auto &ft:r.ft)if(ft.bytes)ft.offset+=file_base;}
     if(r.w<0||r.h<0||r.w>2048||r.h>2048||r.single>1)throw std::runtime_error("HMM2.GFX: invalid dimensions");
     auto *image=new StoredSprite(r,key);add_sprite(image);return *image;
 }
@@ -501,10 +506,10 @@ bool hmm_resource_region(uint32_t key,int x,int y,int w,int h,fheroes2::Image &o
     // Codex: готовый фон меню читается повторно без распаковки каждой полосы окна.
     // Codex: в тесной арене 125780 байт городского слоя не помещались рядом
     // с закреплённым входом Blit. Читаем нужную область, как у больших фонов.
-    if(in.pixels||in.bytes()<=(world_arena?128:64)*1024||(!raw_pixels&&in.cache_menu()))return false;
+    if(in.pixels||in.bytes()<=(world_arena?128:64)*1024||(!(raw_pixels||(key&(HMM_RU_GROUP<<16)))&&in.cache_menu()))return false;
     // Codex: сырой GFX сохраняет построчный путь 91. Расширение ROI до 128 строк
     // обходило полосу 64 КиБ и читало лишние мегабайты при открытии окна на карте.
-    if(raw_pixels){
+    if(raw_pixels||(key&(HMM_RU_GROUP<<16))){
         if(x<0||y<0||w<=0||h<=0||x+w>in.width()||y+h>in.height())throw std::runtime_error("HMM2.GFX: region bounds");
         if(in.singleLayer())out._disableTransformLayer();out.resize(w,h);
         in.decode(out.image(),x,y,w,h);return true;
@@ -547,14 +552,31 @@ bool hmm_resource_region(uint32_t key,int x,int y,int w,int h,fheroes2::Image &o
 }
 bool hmm_resource_ready(uint32_t key){auto *p=find_sprite(key);return p&&p->pixels!=nullptr;}
 const HmmFtImage &hmm_resource_ft(uint32_t key,bool copy){return static_cast<const StoredSprite&>(get(key>>16,key&65535)).rec.ft[copy?1:0];}
+const HmmFtImage &hmm_resource_ft(uint32_t key, bool copy, int &width, int &height)
+{
+    const auto &sprite = get(key >> 16, key & 65535);
+    width = sprite.width();
+    height = sprite.height();
+    return static_cast<const StoredSprite &>(sprite).rec.ft[copy ? 1 : 0];
+}
 const HmmOpaqueRect *hmm_resource_opaque(uint32_t key){return static_cast<const StoredSprite&>(get(key>>16,key&65535)).rec.opaque;}
 uint64_t hmm_resource_silhouette(uint32_t key){const auto &r=static_cast<const StoredSprite&>(get(key>>16,key&65535)).rec;return uint64_t(r.silhouette[1])<<32|r.silhouette[0];}
 const uint8_t *hmm_resource_palette(){open();return palette_map;}
+bool hmm_resource_mask_stream(uint32_t key){
+    const auto &in=static_cast<const StoredSprite&>(get(key>>16,key&65535));
+    return !in.rec.single&&in.bytes()>limit&&(raw_pixels||(key&(HMM_RU_GROUP<<16)));
+}
+void hmm_resource_mask_row(uint32_t key,int x,int y,int width,uint8_t *out){
+    const auto &in=static_cast<const StoredSprite&>(get(key>>16,key&65535));
+    if(x<0||y<0||width<=0||x+width>in.rec.w||y>=in.rec.h||in.rec.single||!(raw_pixels||(key&(HMM_RU_GROUP<<16))))throw std::runtime_error("Sprite mask row bounds");
+    const HmmLocaleReadGuard reading;
+    read_legacy(in.rec.offset+unsigned(in.rec.w)*in.rec.h+unsigned(y)*in.rec.w+x,out,unsigned(width));
+}
 uint32_t hmm_resource_pin(uint32_t key){return static_cast<const StoredSprite&>(get(key>>16,key&65535)).pin;}
 void hmm_resource_restore_pin(uint32_t key,uint32_t previous){static_cast<const StoredSprite&>(get(key>>16,key&65535)).pin=previous;}
 namespace fheroes2::AGG {
-const Sprite &GetICN(int id,uint32_t index){return id>0&&id<ICN::LASTICN?get(unsigned(id),index):empty;}
-uint32_t GetICNCount(int id){open();return id>0&&id<ICN::LASTICN?groups[id].count:0;}
+const Sprite &GetICN(int id,uint32_t index){return id>0&&id<ICN::LASTICN?get(unsigned(id)|(hmm_ru_active()&&hmm_ru_count(unsigned(id))?HMM_RU_GROUP:0),index):empty;}
+uint32_t GetICNCount(int id){open();return id>0&&id<ICN::LASTICN?(hmm_ru_active()&&hmm_ru_count(unsigned(id))?hmm_ru_count(unsigned(id)):groups[id].count):0;}
 const Image &GetTIL(int id,uint32_t index,uint32_t shape){return id>0&&id<TIL::LASTTIL&&shape<4?get(ICN::LASTICN+unsigned(id)*4+shape,index):empty;}
-void updateLanguageDependentResources(SupportedLanguage,bool){/* Codex: пакет содержит английские ресурсы 640×480, подготовленные оригиналом. */}
+void updateLanguageDependentResources(SupportedLanguage,bool){/* Immutable EN/RU sprite banks are selected by resource key. */}
 }
