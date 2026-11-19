@@ -48,6 +48,7 @@ unsigned gpu_upload_bytes,palette_epoch,palette_mapping=~0u;uint32_t palette_loc
 uint16_t palette_entry_by_page[HFT_PAGES];
 uint32_t command_position,dl_address;
 bool copro_unsettled;
+bool cursor_refresh_pending;
 uint8_t last_palette[768];
 // Codex: содержимое двух непоказанных по очереди палитровых банков для цикла воды.
 uint32_t palette_bank_rgb[2][256];unsigned palette_bank_epoch[2];
@@ -241,6 +242,13 @@ void compact_bitmap_constants(){
     }
     words=out;
 }
+HMM_SIZE_RENDER void remember_bitmap_state(bool compacted){
+    if(compacted)for(unsigned h=0;h<32;++h)if(bitmap_seen[h]){
+        for(unsigned field=0;field<5;++field)if(bitmap_seen[h]&(1u<<field))bitmap_prior[h][field]=bitmap_last[h][field];
+        bitmap_known[h]|=bitmap_seen[h];
+    }
+    bitmap_prior_valid=compacted;
+}
 #include "hmm_swap_fence.inc"
 HMM_SIZE_RENDER void put(uint32_t address,const uint32_t *p,unsigned count){
     if(address==0x302054)swap_pending=true;
@@ -268,16 +276,18 @@ HMM_RENDER_NOINLINE bool copro_try_send(const uint32_t *commands,unsigned count)
     command_position=next;copro_unsettled=false;return true;
 }
 HMM_SIZE_RENDER void copro_wait(unsigned bytes=0);
+HMM_SIZE_RENDER void copro_recover(){
+    if(!copro_unsettled)return;
+    // A failed register write may already have reached the FPGA. Drain the
+    // accepted packet before overwriting RAM_CMD or its source in RAM_G.
+    uint32_t written;
+    if(hmm_core->ft_read(0x3020fc,&written)!=ZM_OK)hmm_fail("FT CMD WRITE LINK failed");
+    if((written&3)||written>4092)hmm_fail("FT CMD WRITE invalid");
+    command_position=written;copro_wait();copro_unsettled=false;
+    hmm_core->log("HMM2: CMD cursor packet recovered at %lu",(unsigned long)written);
+}
 HMM_SIZE_RENDER void copro_send(const uint32_t *commands,unsigned count,bool reserve=false){
-    if(copro_unsettled){
-        // A failed register write may already have reached the FPGA. Recover
-        // its committed pointer and drain that packet before reusing RAM_CMD.
-        uint32_t written;
-        if(hmm_core->ft_read(0x3020fc,&written)!=ZM_OK)hmm_fail("FT CMD WRITE LINK failed");
-        if((written&3)||written>4092)hmm_fail("FT CMD WRITE invalid");
-        command_position=written;copro_wait();copro_unsettled=false;
-        hmm_core->log("HMM2: CMD cursor packet recovered at %lu",(unsigned long)written);
-    }
+    copro_recover();
     if(reserve)copro_wait(count*4);
     const uint32_t start=hmm_core->millis();
     if(!copro_try_send(commands,count))hmm_fail("FT CMD write failed");
@@ -304,6 +314,7 @@ void append_dl(unsigned count){
     copro_send(commands,4);copro_wait();
 }
 void publish_dl(){
+    copro_recover();
     for(unsigned at=0;at<words;){
         if(at<lastwords&&dl[at]==lastdl[at]){++at;continue;}
         const unsigned begin=at++;unsigned end=at;
@@ -312,6 +323,7 @@ void publish_dl(){
         put(dl_address+begin*4,dl+begin,end-begin);at=end;
     }
     append_dl(words);
+    cursor_refresh_pending=false;
 }
 #ifdef HMM2_HOST
 #define HMM_GPU_INLINE __forceinline
@@ -813,16 +825,27 @@ bool cache_map_tiles(bool whole=false,bool bake=false,bool full=false){
 }
 }
 namespace {
+// The cursor task must yield to the game on a hard fault. A torn FIFO write
+// can be retried as soon as the chip has drained the commands it accepted.
+HMM_SIZE_RENDER bool task_copro_ready(){
+    if(!copro_unsettled)return true;
+    uint32_t written,read;
+    if(hmm_core->ft_read(0x3020fc,&written)!=ZM_OK||(written&3)||written>4092||
+       hmm_core->ft_read(0x3020f8,&read)!=ZM_OK||read!=written)return false;
+    command_position=written;copro_unsettled=false;return true;
+}
 // Клод: CMD_APPEND из задачи курсора: как append_dl, но без hmm_fail: исключение вне потока игры завершило бы всё приложение.
-bool task_append(unsigned count){
+HMM_SIZE_RENDER bool task_present_dl(unsigned count){
     const uint32_t commands[]={0xffffff00u,0xffffff1eu,dl_address,count*4};
     if(!copro_try_send(commands,4))return false;
     for(const uint32_t start=hmm_core->millis();;){
         uint32_t read;if(hmm_core->ft_read(0x3020f8,&read)!=ZM_OK||read==4095){copro_unsettled=true;return false;}
-        if(read==command_position)return true;
+        if(read==command_position)break;
         if(hmm_core->millis()-start>2000){copro_unsettled=true;return false;}
         hmm_core->delay(1);
     }
+    const uint32_t swap=2;swap_pending=true;
+    return hmm_core->ft_write(0x302054,&swap,1)==ZM_OK;
 }
 // Codex: экран SPG продолжается до первого кадра игры; логотип, рамка и заполнение уже внутри JPEG.
 // Codex: метка «VDLP» и её единицы прежние; координаты затемняющей маски общие с SPG.
@@ -848,13 +871,15 @@ HMM_SIZE_RENDER void loader_list(unsigned shown,uint32_t (&list)[LOADER_WORDS]){
     std::memcpy(list,words,sizeof(words));
 }
 HMM_SIZE_RENDER bool loader_tick(){
-    if(hmm_core->millis()-loader_ticked<100)return true;
+    const uint32_t now=hmm_core->millis();
+    if(now-loader_ticked<100)return true;
+    if(!task_copro_ready())return false;
     uint32_t swap;if(hmm_core->ft_read(0x302054,&swap)!=ZM_OK)return false;
     if(swap)return true;
-    loader_ticked=hmm_core->millis();loader_shown+=(LOADER_FILL-loader_shown+63)/64;
-    uint32_t list[LOADER_WORDS];loader_list(loader_shown,list);
-    if(hmm_core->ft_write(dl_address,list,LOADER_WORDS)!=ZM_OK||!task_append(LOADER_WORDS))return false;
-    swap=2;swap_pending=true;return hmm_core->ft_write(0x302054,&swap,1)==ZM_OK;
+    const unsigned shown=loader_shown+(LOADER_FILL-loader_shown+63)/64;
+    uint32_t list[LOADER_WORDS];loader_list(shown,list);
+    if(hmm_core->ft_write(dl_address,list,LOADER_WORDS)!=ZM_OK||!task_present_dl(LOADER_WORDS))return false;
+    loader_shown=shown;loader_ticked=now;return true;
 }
 HMM_SIZE_RENDER void video_mode_game(){uint32_t v=0;put(0x302070,&v,1);v=640;put(0x302034,&v,1);v=480;put(0x302048,&v,1);v=1;put(0x302070,&v,1);}
 // Codex: до первого кадра RAM_G занят только блоком DL 0..8191, меткой и восстановлением CHIPID.
@@ -862,6 +887,7 @@ HMM_SIZE_RENDER void video_mode_game(){uint32_t v=0;put(0x302070,&v,1);v=640;put
 HMM_SIZE_RENDER void loader_finish(){
     GpuBusy busy;loader_active=false;
     uint32_t v;wait_swap_locked();
+    copro_recover();
     // Клод: полоса шла к концу всё медленнее (шаг — остаток/64) и обрывалась первым кадром игры, не дойдя до конца
     // (пользователь, 02.11). Теперь она за несколько кадров дотягивается до конца и держится полной 150 мс.
     for(bool last=false;!last;){
@@ -874,11 +900,10 @@ HMM_SIZE_RENDER void loader_finish(){
     wait_swap_locked();
     lastwords=0;video_mode_game();
 }
-// Клод: один проход задачи курсора по последнему опубликованному списку; false — FT не отвечает, задача выходит.
-// Здесь нельзя hmm_fail: исключение вне потока игры завершило бы всё приложение, об ошибке скажет сама игра.
+// One non-throwing cursor update. Failed transfers are retried on the next tick.
 HMM_SIZE_RENDER bool cursor_apply(int x,int y,bool clock){
     if(!lastwords||!cursor_count)return true;
-    bool differs=false;
+    bool differs=cursor_refresh_pending;
     const auto patched=[&](const CursorPatch &p){
         const bool vertical=(p.base>>24)==0x2c;
         if(p.clock==2){const uint32_t at=status_reveal_at.load();const bool hidden=!at||int32_t(hmm_core->millis()-at)<0;
@@ -890,13 +915,20 @@ HMM_SIZE_RENDER bool cursor_apply(int x,int y,bool clock){
     };
     for(unsigned i=0;i<cursor_count&&!differs;++i)differs=lastdl[cursor_committed[i].index]!=patched(cursor_committed[i]);
     if(!differs)return true;
+    if(!task_copro_ready())return false;
     uint32_t swap;if(hmm_core->ft_read(0x302054,&swap)!=ZM_OK)return false;
     if(swap)return true;
+    cursor_refresh_pending=true;
     for(unsigned i=0;i<cursor_count;++i){const auto &p=cursor_committed[i];const uint32_t value=patched(p);
-        if(lastdl[p.index]!=value){lastdl[p.index]=value;if(hmm_core->ft_write(dl_address+p.index*4,&value,1)!=ZM_OK)return false;}
+        if(lastdl[p.index]==value)continue;
+        if(hmm_core->ft_write(dl_address+p.index*4,&value,1)!=ZM_OK){
+            // The write may have reached RAM_G even if its reply was lost.
+            lastdl[p.index]=~0u;return false;
+        }
+        lastdl[p.index]=value;
     }
-    if(!task_append(lastwords))return false;
-    swap=2;swap_pending=true;if(hmm_core->ft_write(0x302054,&swap,1)!=ZM_OK)return false;
+    if(!task_present_dl(lastwords))return false;
+    cursor_refresh_pending=false;
     ++cursor_swaps;return true;
 }
 void cursor_task(void*){
@@ -907,13 +939,11 @@ void cursor_task(void*){
         // Клод: «Map loading...» задача курсора больше не снимает (только hmm_status_hold_arm при проявлении карты).
         // Клод: обе стороны сначала ставят свой признак, потом читают чужой (seq_cst): вдвоём в FT не войдут.
         cursor_active.store(1);
-        const bool alive=gpu_busy.load()||copro_unsettled||(loader_active?loader_tick():cursor_apply(x,y,clock));
-        // Keep the cursor task alive while the game repairs a torn packet.
-        // Snapshot under the writer guard; the game may clear the flag once
-        // cursor_active is released below.
-        const bool recover=copro_unsettled;
+        if(!gpu_busy.load()){
+            if(loader_active)loader_tick();
+            else cursor_apply(x,y,clock);
+        }
         cursor_active.store(0);
-        if(!alive&&!recover)break;
     }
     cursor_finished=true;
 }
@@ -942,7 +972,7 @@ extern "C" HMM_SIZE_RENDER void hmm_gpu_init(){
     if(!hft_cache_get(&textures,UINT64_C(0x4000000000000000),DL_LIMIT*4,&dl_address,&upload))hmm_fail("RAM_G DL capacity");
     textures.entries[textures.last_entry].pins|=16;
     if(hmm_core->ft_read(0x3020fc,&command_position)!=ZM_OK||(command_position&3)||command_position>4092)hmm_fail("FT CMD position");
-    copro_unsettled=false;
+    copro_unsettled=cursor_refresh_pending=false;
     // Codex: ядро 1.34 поддерживает 640×480 и 1024×768 в одном окне HDMI.
     // Меняем только стандартные регистры FT, сохраняя частоту кадров развёртки.
     // Клод: при экране загрузки — в первом кадре игры: картинка 1024×768.
@@ -1444,11 +1474,10 @@ rebuild:
     // Клод: публикация и новые якоря курсора — без задачи курсора; её DLSWAP мог ещё не сработать, дожидаемся.
     GpuBusy busy;Prof prof_publish(P_PUBLISH);
     wait_swap_locked();
-    bool swap=copro_unsettled||lastwords!=words||std::memcmp(dl,lastdl,words*4);
+    bool swap=cursor_refresh_pending||copro_unsettled||lastwords!=words||std::memcmp(dl,lastdl,words*4);
     if(swap){publish_dl();uint32_t v=2;put(0x302054,&v,1);displayed^=1;std::memcpy(lastdl,dl,words*4);lastwords=words;}
     else hft_cache_repeat(&textures,int(displayed));
-    if(compacted)for(unsigned h=0;h<32;++h)if(bitmap_seen[h]){for(unsigned f=0;f<5;++f)if(bitmap_seen[h]&(1u<<f))bitmap_prior[h][f]=bitmap_last[h][f];bitmap_known[h]|=bitmap_seen[h];}
-    bitmap_prior_valid=compacted;
+    remember_bitmap_state(compacted);
     cursor_count=cursor_overflow?0:cursor_pending_count;
     std::copy(cursor_pending,cursor_pending+cursor_count,cursor_committed);
     status_emitted_hidden.store(status_hidden);status_reveal_at.store(status_patchable&&!cursor_overflow?status_since+STATUS_DELAY_MS:0);

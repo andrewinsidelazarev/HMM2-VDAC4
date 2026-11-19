@@ -26,7 +26,8 @@ struct MessageFade {
     unsigned revision=0;
     bool shown=false,dirty=true,popup=true;
     bool packed=false;
-    std::vector<uint32_t> program,scene;
+    std::vector<uint32_t> scene;
+    unsigned scene_palette_epoch=0;
     Sequence<Draw> geometry;
     bool blit=false;
     unsigned window_mode=0,window_started=0;
@@ -43,15 +44,12 @@ struct MessageFade {
     std::array<uint32_t,256> blit_colors{};
     unsigned blit_colors_used=1;
     Sequence<Draw> blit_before;
-    int mouse_x=0,mouse_y=0;
 };
 std::shared_ptr<MessageCommands> message_scene;
 std::vector<std::unique_ptr<MessageFade>> message_fades;
 MessageFade *message_transition;
-// Cursor patch indices refer to the most recently built display list.
-MessageFade *message_cursor_owner;
 unsigned message_alpha=255;
-HMM_MESSAGE_FN void message_fade_reset(){message_transition=message_cursor_owner=nullptr;message_fades.clear();message_scene.reset();}
+HMM_MESSAGE_FN void message_fade_reset(){message_transition=nullptr;message_fades.clear();message_scene.reset();}
 
 HMM_MESSAGE_FN void message_scene_capture(){
     if(!message_scene||!message_scene.unique())message_scene=std::make_shared<MessageCommands>();
@@ -441,14 +439,15 @@ HMM_MESSAGE_FN void message_repeat_vertices(){
 HMM_MESSAGE_FN void message_transition_frame(const uint8_t *rgb){
     auto &f=*message_transition;
     hmm_audio_tick();
-    const bool build=f.program.empty()||!message_alpha||message_cursor_owner!=&f;
+    const bool build=f.scene.empty()||!message_alpha||f.scene_palette_epoch!=palette_epoch;
     hft_cache_begin(&textures,displayed);words=0;dl_overflow=false;reset_emitter();
     std::memset(compact_valid,0,sizeof(compact_valid));std::memset(compact_mask,0,sizeof(compact_mask));compact_handle=0;
+    if(f.background)cached_textures_use(f.background->part);
+    if(message_alpha)cached_textures_use(f.foreground.part);
     if(build){
     word(0x02000000);word(0x26000007);word(0x1c2801e0);
-    if(f.background){cached_textures_use(f.background->part);for(auto v:f.background->part.commands)word(v);}
+    if(f.background)for(auto v:f.background->part.commands)word(v);
     if(message_alpha){
-        cached_textures_use(f.foreground.part);
         palette_mapping=~0u;
         for(auto v:f.foreground.part.commands){
             if((v>>24)==0x2a){
@@ -469,17 +468,17 @@ HMM_MESSAGE_FN void message_transition_frame(const uint8_t *rgb){
 #ifdef HMM2_HOST
     if(std::getenv("HMM2_FT_WINDOW_DUMP"))std::printf("WINDOW_DL serial=%u words=%u packed=%d\n",serial,words,int(f.packed));
 #endif
-    // Retain the independent scene before cursor emission and before bitmap
-    // constants can be omitted using the previous display list's state.
-    if(!dl_overflow)f.scene.assign(dl,dl+words);
-    // Build current cursor positions and patch anchors using the same FT path
-    // as normal frames; the scene alpha never reaches the cursor.
+    if(!dl_overflow){f.scene.assign(dl,dl+words);f.scene_palette_epoch=palette_epoch;}
+    }else{
+        words=unsigned(f.scene.size());std::copy(f.scene.begin(),f.scene.end(),dl);
+    }
+    // Only the window and its background are cached. Emit the live cursor
+    // every time so its image, texture pins and patch positions match this DL.
     reset_emitter();word(0x100000ff);set(0x1b000000);set(0x1c2801e0);
     cursor_pending_count=0;cursor_overflow=false;
     int mx,my;
     if(cursor_live())hmm_loading_mouse(&mx,&my);
     else {const auto &m=LocalEvent::Get().getMouseCursorPos();mx=m.x;my=m.y;}
-    f.mouse_x=mx;f.mouse_y=my;
     cursor_record=true;cursor_layer=0;
     if(cursor_image&&!cursor_image->empty())for(auto d:canvas(*cursor_image).draws){
         d.r.x+=cursor_x+mx-cursor_origin_x;d.r.y+=cursor_y+my-cursor_origin_y;
@@ -501,10 +500,10 @@ HMM_MESSAGE_FN void message_transition_frame(const uint8_t *rgb){
             f.chrome.reset();f.text_rows.clear();f.chrome_rejected=f.rows_rejected=true;f.window_missing=false;
             message_window_blits(f);f.window_mode=3;
         }
-        return message_transition_frame(rgb);
+        f.scene.clear();return message_transition_frame(rgb);
     }
     if((dl_overflow||words>DL_LIMIT)&&!f.packed){
-        message_window_sprite(f);return message_transition_frame(rgb);
+        message_window_sprite(f);f.scene.clear();return message_transition_frame(rgb);
     }
     if(dl_overflow||words>DL_LIMIT){
 #ifdef HMM2_HOST
@@ -512,18 +511,12 @@ HMM_MESSAGE_FN void message_transition_frame(const uint8_t *rgb){
 #endif
         hmm_fail("Window fade display list exceeds 8 KiB");
     }
-    f.program.assign(dl,dl+words);message_cursor_owner=&f;
     if(f.blit&&f.window_report){
         char log[136];std::snprintf(log,sizeof(log),"HMM2 WINDOW draw=%s words=%u prepare=%u rows=%u/%u",f.window_mode==0?"direct":f.window_mode==1?"hybrid":f.window_mode==2?"rows":"blit",words,unsigned(hmm_core->millis()-f.window_started),f.row_builds,f.row_hits);hmm_log(log);f.window_report=false;
     }
-    if(f.blit&&f.window_mode<3){f.blit_before.clear();std::vector<uint8_t>().swap(f.blit_pixels);}
-    }
-    words=unsigned(f.program.size());std::copy(f.program.begin(),f.program.end(),dl);
+    if(build&&f.blit&&f.window_mode<3){f.blit_before.clear();std::vector<uint8_t>().swap(f.blit_pixels);}
     for(unsigned i=0;i<words;++i)if((dl[i]&0xffff0000u)==0x10010000u)
         dl[i]=0x10000000u|(((dl[i]&255)*message_alpha+127)/255);
-    if(f.background)cached_textures_use(f.background->part);
-    // The alpha-zero list has no foreground commands or foreground leases.
-    if(message_alpha)cached_textures_use(f.foreground.part);
     if(message_alpha==255&&(build||message_scene==f.background)){
         if(!message_scene||!message_scene.unique())message_scene=std::make_shared<MessageCommands>();
         auto &p=message_scene->part;map_cache_release(p);p.commands=f.scene;
@@ -533,15 +526,9 @@ HMM_MESSAGE_FN void message_transition_frame(const uint8_t *rgb){
                 p.textures.push_back(i);++map_texture_refs[i];textures.entries[i].pins|=4u;
             }
     }
-    int mx,my;if(cursor_live())hmm_loading_mouse(&mx,&my);
-    else {const auto &m=LocalEvent::Get().getMouseCursorPos();mx=m.x;my=m.y;}
-    for(unsigned i=0;i<cursor_pending_count;++i){const auto &p=cursor_pending[i];const int delta=(p.base>>24)==0x2c?my-f.mouse_y:mx-f.mouse_x;
-        dl[p.index]=(p.base&0xff000000u)|((p.base+delta*16)&0x1ffffu);}
     GpuBusy busy;Prof prof_publish(P_PUBLISH);
-    uint32_t v;const auto start=hmm_core->millis();
-    do{if(hmm_core->ft_read(0x302054,&v)!=ZM_OK)hmm_fail("FT DLSWAP read");
-        if(hmm_core->millis()-start>2000)hmm_fail("FT DLSWAP timeout");}while(v);
-    publish_dl();v=2;put(0x302054,&v,1);displayed^=1;
+    wait_swap_locked();
+    publish_dl();const uint32_t swap=2;put(0x302054,&swap,1);displayed^=1;
 #ifdef HMM2_HOST
     if(!message_alpha&&std::getenv("HMM2_TEST_FADE_PINS")){
         unsigned only=0,pinned=0,bytes=0;
@@ -553,10 +540,10 @@ HMM_MESSAGE_FN void message_transition_frame(const uint8_t *rgb){
         if(std::getenv("HMM2_EXPECT_RELEASED_FOREGROUND")&&pinned)hmm_fail("Closed foreground remains scanout-pinned");
     }
 #endif
-    std::memcpy(lastdl,dl,words*4);lastwords=words;bitmap_prior_valid=false;
+    std::memcpy(lastdl,dl,words*4);lastwords=words;remember_bitmap_state(compacted);
     cursor_count=cursor_overflow?0:cursor_pending_count;
     std::copy(cursor_pending,cursor_pending+cursor_count,cursor_committed);
-    cursor_anchor_x=f.mouse_x;cursor_anchor_y=f.mouse_y;status_reveal_at.store(0);
+    cursor_anchor_x=mx;cursor_anchor_y=my;status_reveal_at.store(0);
     ++serial;
     if(message_alpha!=255||!f.shown){
         char log[96];std::snprintf(log,sizeof(log),"HMM2 WINDOW fade=%u depth=%u words=%u",message_alpha,unsigned(message_fades.size()),words);hmm_log(log);
@@ -568,12 +555,11 @@ HMM_MESSAGE_FN void message_fade_close(){
     if(f.popup&&f.shown&&hmm_gpu_restore_allowed()){
         try{
             message_prepare(f);
-            f.program.clear();message_transition=&f;
+            f.scene.clear();message_transition=&f;
             for(unsigned alpha:{170u,85u,0u}){message_alpha=alpha;hmm_video_frame(nullptr,last_palette,640,480);}
             message_scene=f.background;
         }catch(...){hmm_window_restore_failed();}
     }
-    if(message_cursor_owner==&f)message_cursor_owner=nullptr;
     message_transition=nullptr;message_fades.pop_back();
 }
 }
@@ -602,7 +588,7 @@ HMM_MESSAGE_FN void hmm_gpu_message_present(const uint8_t *rgb,int w,int h){
 #ifdef HMM2_HOST
     if(f.shown&&f.dirty&&std::getenv("HMM2_POPUP_UPDATE_TRACE"))std::printf("WINDOW_UPDATE packed=%u revision=%u\n",unsigned(f.packed),f.revision);
 #endif
-    if(opening||f.dirty){message_scene=f.background;message_prepare(f);f.program.clear();}
+    if(opening||f.dirty){message_scene=f.background;message_prepare(f);f.scene.clear();}
     // Palette data is initialized by the ordinary renderer before the first
     // dialog; the foreground uses those same immutable original textures.
     message_transition=&f;
@@ -621,7 +607,10 @@ extern "C" HMM_MESSAGE_FN void hmm_gpu_frame(const uint8_t *pixels,const uint8_t
         prepare_ms=unsigned(hmm_core->millis()-start)-link_ms;
         frame_bytes=traffic;frame_link=link_ms;traffic=link_ms=gpu_upload_bytes=0;
     }
-    else {message_cursor_owner=nullptr;hmm_gpu_scene_frame(pixels,rgb,w,h);}
+    else {
+        if(!message_fades.empty())message_fades.back()->scene.clear();
+        hmm_gpu_scene_frame(pixels,rgb,w,h);
+    }
 }
 
 #ifndef HMM2_HOST

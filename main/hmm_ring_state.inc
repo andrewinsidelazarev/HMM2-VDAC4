@@ -38,6 +38,8 @@ bool ring_hero_changed;
 bool ring_can_resume,ring_subject_changed,ring_view_reusable,ring_deferred;
 unsigned ring_camera_reuse,ring_subject_reuse,ring_subject_retry;
 std::array<uint16_t,512> ring_resume_dirty;unsigned ring_resume_dirty_count;
+struct RingHeroFragment {int x,y;RingDraw draw;RingDraw *replace=nullptr;};
+std::vector<RingHeroFragment> ring_hero_before,ring_hero_after;
 #ifdef HMM2_HOST
 unsigned ring_pending_grows;
 #endif
@@ -49,7 +51,7 @@ void ring_sprite_plan_clear();
 int ring_x,ring_y,ring_cols,ring_rows;
 int ring_frame_tx,ring_frame_ty;
 Rect ring_window;
-void ring_clear(){ring_deferred=ring_can_resume=ring_view_reusable=ring_subject_changed=false;body_plan_clear();ring_clusters_clear(true);ring_sprite_plan_clear();ring_live.clear();ring_live_revision=0;for(auto &p:ring_cells)p.reset();ring_collect=ring_frame=ring_expanded=false;ring_owner=nullptr;++ring_generation;++ring_revision;++ring_contents_revision;}
+void ring_clear(){ring_deferred=ring_can_resume=ring_view_reusable=ring_subject_changed=false;body_plan_clear();ring_clusters_clear(true);ring_sprite_plan_clear();ring_live.clear();ring_live_revision=0;for(auto &p:ring_cells)p.reset();std::vector<RingHeroFragment>().swap(ring_hero_before);std::vector<RingHeroFragment>().swap(ring_hero_after);ring_collect=ring_frame=ring_expanded=false;ring_owner=nullptr;++ring_generation;++ring_revision;++ring_contents_revision;}
 int ring_floor(int v){return v>=0?v/32:-((-v+31)/32);}
 RingCell *ring_cell(int x,int y){
     auto &slot=ring_cells[(unsigned(y)&15)*32+(unsigned(x)&31)];return slot&&slot->x==x&&slot->y==y?slot.get():nullptr;
@@ -73,11 +75,9 @@ bool ring_same_source(const RingDraw &a,const RingDraw &b){
 }
 HMM_SIZE_RENDER bool ring_subject_update(const HmmSubjectPart *old_parts,unsigned old_count,const HmmSubjectPart *new_parts,unsigned new_count){
     if(!ring_collect||!ring_can_resume)return false;
-    struct Fragment {int x,y;RingDraw draw;unsigned at=~0u;};
     try{
-        std::vector<Fragment> old_fragments,new_fragments;
-        auto split=[&](const HmmSubjectPart *parts,unsigned count,std::vector<Fragment> &out){
-            out.reserve(count);
+        auto split=[&](const HmmSubjectPart *parts,unsigned count,std::vector<RingHeroFragment> &out){
+            out.clear();
             for(unsigned i=0;i<count;++i){const auto &p=parts[i];Draw d;d.resource=p.resource;d.r={p.x,p.y,p.w,p.h};d.sx=p.sx;d.sy=p.sy;d.step=p.step;d.opaque=p.opaque;d.mask=2;
                 const auto r=intersect(d.r,{ring_x*32,ring_y*32,ring_cols*32,ring_rows*32});if(!r.w||!r.h)continue;
                 for(int y=ring_floor(r.y);y<=ring_floor(r.y+r.h-1);++y)for(int x=ring_floor(r.x);x<=ring_floor(r.x+r.w-1);++x){
@@ -86,24 +86,30 @@ HMM_SIZE_RENDER bool ring_subject_update(const HmmSubjectPart *old_parts,unsigne
                 }
             }
         };
-        split(old_parts,old_count,old_fragments);split(new_parts,new_count,new_fragments);
-        if(old_fragments.size()!=new_fragments.size())return false;
-        for(auto &p:old_fragments){const auto *cell=ring_cell(p.x,p.y);if(!cell||!cell->valid)return false;
-            unsigned matches=0;for(unsigned j=0;j<cell->source.size();++j){const auto &d=cell->source[j];
-                if(ring_same_source(p.draw,d)&&p.draw.original==d.original){p.at=j;++matches;}}
-            if(matches!=1)return false;
-            unsigned old_matches=0,new_matches=0;
-            for(const auto &q:old_fragments)old_matches+=q.x==p.x&&q.y==p.y&&(q.draw.resource>>16)==(p.draw.resource>>16);
-            for(const auto &q:new_fragments)new_matches+=q.x==p.x&&q.y==p.y&&(q.draw.resource>>16)==(p.draw.resource>>16);
-            if(old_matches!=1||new_matches!=1)return false;
+        split(old_parts,old_count,ring_hero_before);split(new_parts,new_count,ring_hero_after);
+        if(ring_hero_before.size()!=ring_hero_after.size())return false;
+        for(const auto &p:ring_hero_before){
+            auto *cell=ring_cell(p.x,p.y);if(!cell||!cell->valid)return false;
+            auto replacement=ring_hero_after.end();
+            for(auto q=ring_hero_after.begin();q!=ring_hero_after.end();++q){
+                if(q->x!=p.x||q->y!=p.y||(q->draw.resource>>16)!=(p.draw.resource>>16))continue;
+                if(q->replace||replacement!=ring_hero_after.end())return false;
+                replacement=q;
+            }
+            if(replacement==ring_hero_after.end())return false;
+            for(auto &d:cell->source)if(ring_same_source(p.draw,d)&&p.draw.original==d.original){
+                if(replacement->replace)return false;
+                replacement->replace=&d;
+            }
+            if(!replacement->replace)return false;
         }
-        // Validation completed before the first mutation. Matching the same
-        // cell and ICN preserves the original hero queue/layer at that cell.
-        for(auto &p:old_fragments){auto *cell=ring_cell(p.x,p.y);auto &prior=cell->source[p.at];
-            for(auto &q:new_fragments)if(q.x==p.x&&q.y==p.y&&(q.draw.resource>>16)==(p.draw.resource>>16)){
-                q.draw.order=prior.order;
-                if(!ring_same_source(prior,q.draw)||prior.original!=q.draw.original){prior=std::move(q.draw);cell->live_id=ring_live_next_id++;ring_subject_changed=true;}
-                break;
+        // Each replacement owns an existing ordered slot. The match is
+        // complete before changing the pose, including on ambiguous inputs.
+        for(auto &q:ring_hero_after){
+            auto &prior=*q.replace;q.draw.order=prior.order;
+            if(!ring_same_source(prior,q.draw)||prior.original!=q.draw.original){
+                prior=std::move(q.draw);auto *cell=ring_cell(q.x,q.y);
+                cell->live_id=ring_live_next_id++;ring_subject_changed=true;
             }
         }
         for(unsigned i=0;i<ring_resume_dirty_count;++i)ring_cells[ring_resume_dirty[i]]->dirty=false;

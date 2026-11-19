@@ -12,7 +12,7 @@ struct RingCopyQueue {
     }
     ~RingCopyQueue(){discard();}
     static HMM_SIZE_RENDER void flush();
-    static HMM_SIZE_RENDER bool copy(const RingCell &,unsigned,unsigned,uint32_t);
+    static HMM_SIZE_RENDER bool copy(uint64_t,unsigned,unsigned,uint32_t);
 };
 uint32_t RingCopyQueue::commands[128];RingCopyCommit RingCopyQueue::commits[32];unsigned RingCopyQueue::count;
 void RingCopyQueue::flush(){
@@ -21,16 +21,24 @@ void RingCopyQueue::flush(){
     for(unsigned i=0;i<count;++i){const auto &c=commits[i];ring_background_ids[c.bank][c.slot]=c.id;}
     discard();
 }
-bool RingCopyQueue::copy(const RingCell &cell,unsigned bank,unsigned slot,uint32_t target){
+bool RingCopyQueue::copy(uint64_t key,unsigned bank,unsigned slot,uint32_t target){
     const unsigned other=bank^1u,col=slot/RING_BG_ROWS;
-    if(ring_background_ids[other][slot]!=cell.id)return false;
+    unsigned source=slot;
+    if(ring_background_ids[other][source]!=key){
+        if(!(key>>63))return false;
+        // A fully opaque image can also be copied from another resident row
+        // of the same column. The source bank remains immutable during build.
+        for(source=col*RING_BG_ROWS;source<(col+1)*RING_BG_ROWS;++source)
+            if(ring_background_ids[other][source]==key)break;
+        if(source==(col+1)*RING_BG_ROWS)return false;
+    }
     const unsigned entry=ring_background_entries[other][col];auto &e=textures.entries[entry];
     if(!e.valid||e.key!=(UINT64_C(0xd000000000000000)|(other*RING_BG_COLS+col))||e.bytes!=RING_BG_BYTES)return false;
     if(count==32)flush();
     // Source pages remain resident until the queued MEMCPY has completed.
     ++map_texture_refs[entry];e.pins|=4u;e.age=++textures.age;
     uint32_t *p=commands+count*4;
-    p[0]=0xffffff1du;p[1]=target;p[2]=e.page*HFT_PAGE_BYTES+(slot&15)*1024;p[3]=1024;
-    commits[count++]={cell.id,uint16_t(slot),uint16_t(entry),uint8_t(bank)};
+    p[0]=0xffffff1du;p[1]=target;p[2]=e.page*HFT_PAGE_BYTES+(source&15)*1024;p[3]=1024;
+    commits[count++]={key,uint16_t(slot),uint16_t(entry),uint8_t(bank)};
     return true;
 }

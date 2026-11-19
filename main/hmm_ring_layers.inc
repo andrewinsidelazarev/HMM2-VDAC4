@@ -38,8 +38,9 @@ __attribute__((optimize("Os")))
 #endif
 bool ring_pixels(RingCell &cell){
     auto *base=reinterpret_cast<uint8_t*>(ring_pixels_buffer);
-    std::memset(base,0,sizeof(ring_pixels_buffer));
-    std::array<uint8_t,1024> depth{},coverage{};
+    // The high bit records opaque coverage; the low bits count shadows.
+    // Only populated shadow slots are read, so the shared pixels need no clear.
+    uint8_t depth[1024]{};
     const auto *translate=hmm_resource_palette();
     for(unsigned di=0;di<cell.tail;++di){const Draw &d=cell.source[di];
         if(d.bitmap||d.repeat||d.layer||(d.fill&&d.raw)||(!d.fill&&d.color))return false;
@@ -50,6 +51,15 @@ bool ring_pixels(RingCell &cell){
             const bool cropped=hmm_resource_region(d.resource,left,d.sy,d.r.w,d.r.h,region);
             const auto &im=cropped?region:original;if(cropped){sx=d.step<0?d.r.w-1:0;sy=0;}
             pixels=im.image();stride=im.width();if(!im.singleLayer()&&!d.raw)mask=im.transform();
+            if(!mask&&d.step==1&&!d.mapping){
+                for(unsigned y=0;y<d.r.h;++y){
+                    const unsigned pos=(d.r.y+y)*32+d.r.x;
+                    const auto *src=pixels+(sy+y)*stride+sx;
+                    for(unsigned x=0;x<d.r.w;++x)base[pos+x]=translate[src[x]];
+                    std::memset(depth+pos,128,d.r.w);
+                }
+                hmm_resource_restore_pin(d.resource,pin);continue;
+            }
         }
         bool fits=true;
         for(int y=0;y<d.r.h&&fits;++y)for(int x=0;x<d.r.w;++x){
@@ -57,20 +67,22 @@ bool ring_pixels(RingCell &cell){
             const unsigned tr=d.fill?d.mask:mask?mask[at]:0;
             if(tr==1||(tr>1&&d.mapping&&mapping_solid[d.mapping-1]))continue;
             if(tr>=2&&tr<=(d.fill?9u:14u)){
-                if(depth[pos]==RING_SHADE_PLANES){fits=false;break;}
-                base[(1+depth[pos]++)*1024+pos]=uint8_t(d.fill?tr+13:tr-1);
+                const unsigned plane=depth[pos]&127u;
+                if(plane==RING_SHADE_PLANES){fits=false;break;}
+                base[(1+plane)*1024+pos]=uint8_t(d.fill?tr+13:tr-1);++depth[pos];
             }else if(tr!=15||d.fill){
                 unsigned c=d.fill?d.color:pixels[at];if(d.mapping)c=mappings[d.mapping-1][c];
-                base[pos]=translate[c];depth[pos]=0;coverage[pos]=1;
+                base[pos]=translate[c];depth[pos]=128;
             }
         }
         if(!d.fill)hmm_resource_restore_pin(d.resource,pin);
         if(!fits)return false;
     }
-    if(!std::all_of(coverage.begin(),coverage.end(),[](uint8_t v){return v!=0;}))return false;
-    const unsigned planes=*std::max_element(depth.begin(),depth.end());
+    unsigned planes=128;
+    for(unsigned z:depth){if(z<128)return false;planes=std::max(planes,z);}
+    planes-=128;
     // Codex: непрозрачный поздний слой отменяет все прежние тени этого пикселя.
-    for(unsigned j=0;j<planes;++j)for(unsigned p=0;p<1024;++p)if(depth[p]<=j)base[(j+1)*1024+p]=0;
+    for(unsigned j=0;j<planes;++j)for(unsigned p=0;p<1024;++p)if(depth[p]<=128+j)base[(j+1)*1024+p]=0;
     // Codex: одноцветная плоскость преобразования — точная маска L1 с исходной
     // COLOR_A. В отличие от L4 она не округляет альфу 119 до 118 на Tang.
     unsigned out=1024;cell.layout=0;
@@ -83,16 +95,32 @@ bool ring_pixels(RingCell &cell){
     }
     cell.bytes=out;return true;
 }
+HMM_SIZE_RENDER uint64_t ring_background_key(const RingCell &cell){
+    if(cell.tail==1){
+        const auto &d=cell.source.front();
+        if(!d.bitmap&&!d.fill&&!d.repeat&&!d.layer&&!d.color&&!d.mapping&&d.w==32&&d.h==32&&
+           !d.x&&!d.y&&!d.sy&&((d.step==1&&!d.sx)||(d.step==-1&&d.sx==31)))
+            return (UINT64_C(1)<<63)|(uint64_t(d.resource)<<2)|(unsigned(d.raw)<<1)|unsigned(d.step<0);
+    }
+    return cell.id;
+}
 bool ring_upload(RingCell &cell,uint32_t &address,uint32_t background,unsigned bank,RingCopyQueue &copies){
     bool composed=false;
-    if(!cell.bytes){Prof prep(P_TILEPREP);if(!ring_pixels(cell)){cell.usable=false;return false;}composed=true;}
     const unsigned slot=ring_background_slot(cell.x,cell.y);
-    if(ring_background_ids[bank][slot]!=cell.id){
+    const auto key=cell.bytes?cell.id:ring_background_key(cell);
+    if(ring_background_ids[bank][slot]==key){
+        if(!cell.bytes){cell.id=key;cell.bytes=1024;cell.layout=0;}
+    }else{
         Prof prep(P_TILEPREP);
         const uint32_t target=background+(slot&15)*1024;
-        if(!copies.copy(cell,bank,slot,target)){
-            if(!composed){if(!ring_pixels(cell)){cell.usable=false;return false;}composed=true;}
-            put(target,ring_pixels_buffer,256);ring_background_ids[bank][slot]=cell.id;
+        if(copies.copy(key,bank,slot,target)){
+            if(!cell.bytes){cell.id=key;cell.bytes=1024;cell.layout=0;}
+        }else{
+            if(!ring_pixels(cell)){cell.usable=false;return false;}
+            composed=true;
+            put(target,ring_pixels_buffer,256);
+            if(cell.bytes==1024)cell.id=key;
+            ring_background_ids[bank][slot]=cell.id;
         }
         ++ring_builds;
     }

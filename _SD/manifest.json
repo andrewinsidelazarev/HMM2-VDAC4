@@ -1,5 +1,5 @@
 {
-  "build": 159,
+  "build": 161,
   "contains_game_dat": false,
   "requires_game_dat": true,
   "required_dat_path": "GAMES/VDAC4/HMM2 VDAC4/HMM2.DAT",
@@ -18,8 +18,8 @@
     },
     {
       "path": "GAMES/VDAC4/HMM2 VDAC4/HMM2.ELF",
-      "bytes": 1650528,
-      "sha256": "d460ef515cb67d26fd01a0e6f051ff5d47a0dc8b8ccf71744e814ac7d09ecf36"
+      "bytes": 1650544,
+      "sha256": "2c167945bfa71abeb76e8cb0545efecd10d7891efac438416aeabb2e6c08dd22"
     },
     {
       "path": "GAMES/VDAC4/HMM2 VDAC4/HSD.ELF",
@@ -84,7 +84,7 @@
     {
       "path": "README.md",
       "bytes": 1789,
-      "sha256": "0fc0212c0325bde872ad8e48c1730a982e7be4c63f3774a2ce91e72fd6b5232c"
+      "sha256": "16be826d751c5fa94eb2310a4ee45317dda0f3597466c50fede8e5565591f26d"
     },
     {
       "path": "WC/ESP/OGG.ELF",
@@ -93,9 +93,9 @@
     }
   ],
   "launcher_revision": "wc-f7-reserved",
-  "physical_speed_measured": false,
+  "physical_speed_measured": true,
   "physical_speed_confirmed": false,
-  "build_notes": "../docs/BUILD159.md",
+  "build_notes": "../docs/BUILD161.md",
   "contains_language_resources": false,
   "physical_levelup_cursor_verified": true
 }
